@@ -17,26 +17,26 @@ simple_ma = {
         class = "SPBFUT",
 
         -- tracking trend
-        avgFactorFast = 5e-6,
-        avgFactorSlow = 1e-06,
+        avgFactor1 = 0.0115,
+        avgFactor2 = 0.04,
 
-        -- tracking deviation
-        avgFactor = 0.01672825,
-        avgFactorM2 = 0.09,
+        -- wait for stat
+        ignoreFirst = 100,
+
         paramsInfo = {
-            avgFactor = { min=2.2204460492503131e-16, max=1, step=0.1, relative=true },
-            avgFactorFast = { min=2.2204460492503131e-16, max=1, step=0.1, relative=true },
-            avgFactorSlow = { min=2.2204460492503131e-16, max=1, step=0.1, relative=true },
-            avgFactorM2 = { min=2.2204460492503131e-16, max=1, step=0.1, relative=true },
+            avgFactor1 = { min=2.2204460492503131e-16, max=1, step=0.1, relative=true },
+            avgFactor2 = { min=2.2204460492503131e-16, max=1, step=0.1, relative=true },
         },
+        schedule = {
+            { from = { hour=9, min=0 }, to = { hour = 21, min = 45 } } 
+        }
     },
 
     ui_mapping = {
         {name="asset", title="Ѕумага", ctype=QTABLE_STRING_TYPE, width=8, format="%s" },
         {name="lastPrice", title="÷ена", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
-        {name="avgPriceFast", title="—редн€€ цена 1", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
-        {name="avgPriceSlow", title="—редн€€ цена 2",  ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
-        {name="deviation",title="—тд. ќтклонение", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.2f" },
+        {name="avgPrice1", title="—редн€€ цена 1", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
+        {name="avgPrice2", title="—редн€€ цена 2",  ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
         {name="charFunction", title="ќчарование", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
     }
 }
@@ -51,19 +51,16 @@ function simple_ma.create(etc)
             end
         end
     end
+
     local self = {
         etc = { },
 
         state = {
-            lastPrice = 0,
-            avgPriceFast = 0,
-            avgPriceSlow = 0,
-            deviation = 0,
+            lastPrice = false,
+            avgPrice1 = 0,
+            avgPrice2 = 0,
             charFunction = 0,
-
-            meanPrice = nil,    -- super fast average
-            dispersion = 0,
-            deviation = 0,
+            tradeCount = 0,
         }
     }
     -- copy master configuration
@@ -79,9 +76,8 @@ function simple_ma.create(etc)
         state = {
             asset = self.etc.asset,
             lastPrice = 0,
-            avgPriceFast = 0,
-            avgPriceSlow = 0,
-            deviation = 0,
+            avgPrice1 = 0,
+            avgPrice2 = 0,
             charFunction = 0,
         }
     }
@@ -93,21 +89,20 @@ function simple_ma.create(etc)
     --   0 - do not hold
     --   1 - long
     --  -1 - short
-    function strategy.onTrade(trade)
+    function strategy.onTrade(trade, datetime)
         -- filter out alien trades
         local etc = self.etc
         if trade.sec_code ~= etc.asset or trade.class_code ~= etc.class then
             return
         end
-    
+
         -- process averages
         local price = trade.price
         local state = self.state
-        if not state.meanPrice then
+        if not state.lastPrice then
             -- the very first trade
-            state.avgPriceFast = price
-            state.avgPriceSlow = price
-            state.meanPrice = price
+            state.avgPrice1 = price
+            state.avgPrice2 = price
         end
 
         local function average(v0, v1, k)
@@ -115,32 +110,46 @@ function simple_ma.create(etc)
         end
 
         state.lastPrice = trade.price
-        state.avgPriceFast = average(state.avgPriceFast, price, etc.avgFactorFast)
-        state.avgPriceSlow = average(state.avgPriceSlow, price, etc.avgFactorSlow)
+        state.avgPrice1 = average(state.avgPrice1, price, etc.avgFactor1)
+        state.avgPrice2 = average(state.avgPrice2, price, etc.avgFactor2)
 
-        state.meanPrice = average(state.meanPrice, price, etc.avgFactor)
-        local dispersion = (price - state.meanPrice)^2
-        state.dispersion = average(state.dispersion, dispersion, etc.avgFactorM2)
-        state.deviation = state.dispersion^0.5
-
-        local charFunction = state.avgPriceFast - state.avgPriceSlow
+        local charFunction = state.avgPrice1 - state.avgPrice2
         state.charFunction = charFunction
 
-        -- Standard ration of deviations of two averaged values will be the same as
-        -- ratio of their averaging factors. So the strategy threshold should be equal 
-        -- to 3 sums of slow and fast deviations
-
-        local threshold = 3*state.deviation*(etc.avgFactorFast + etc.avgFactorSlow)/etc.avgFactor
         local signal = 0
-        if charFunction > threshold then
-            signal = 1
-        elseif charFunction < -threshold then
-            signal = -1
+        state.tradeCount = state.tradeCount + 1
+        if state.tradeCount > etc.ignoreFirst then
+            if charFunction > 0 then
+                signal = 1
+            elseif charFunction < 0 then
+                signal = -1
+            end
         end
 
         -- update UI state
-        copyValues(state, strategy.state, strategy.state)
+        strategy.state = state
 
+        -- check schedule
+        local function makeTimeStamp(datetime)
+            return datetime.hour*3600 + (datetime.min or 0)*60 + (datetime.sec or 0)
+        end
+
+        local currTime = makeTimeStamp(datetime)
+        local tradingAllowed = false
+        
+        for _, row in ipairs(etc.schedule) do
+            local from = makeTimeStamp(row.from)
+            local to = makeTimeStamp(row.to)
+            --print(currtime, from, to)
+            if currTime >= from and currTime < to then
+                tradingAllowed = true
+                break
+            end
+        end
+
+        if not tradingAllowed then
+            signal = 0
+        end
         return signal
     end
     return strategy

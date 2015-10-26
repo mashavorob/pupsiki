@@ -35,7 +35,7 @@ local function usage(args)
 end
 
 local function loadStrategy(sname, etc)
-    assert(pcall(require, "strategies/" .. sname), "Unable to load strategy '" .. sname .. "'")
+    assert(pcall(require, "strategies/" .. sname)) --, "Unable to load strategy '" .. sname .. "'")
     local factory = assert(_G[sname], "cannot find factory for strategy '" .. sname .. "'")
     return assert(factory.create(etc), "Unable to load strategy'" .. sname .. "'")
 end
@@ -111,13 +111,21 @@ local function loadAllLogs(logs)
 end
 
 local function runStrategy(sname, trades, etc)
-    local pos, price = 0, 0
-    local income = 0
+    local pos, netPos = 0, 0, 0
     local strategy = loadStrategy(sname, etc)
+    local trade = trades[1]
+    local dayDealCount = 0
 
-    io.stdout:write("processing ... ")
-    for _,trade in ipairs(trades) do
-        price = trade.price
+    local function getDate(trade)
+        local date = trade.datetime
+        return string.format("%02d-%02d-%04d", date.day, date.month, date.year)
+    end
+
+    io.stdout:write("processing " .. getDate(trade) .. " ... ")
+
+    for i = 2,#trades do
+        local nextTrade = trades[i]
+        local price = nextTrade.price
         local newPos = strategy.onTrade(trade, trade.datetime)
         if newPos > 0 then
             newPos = 1
@@ -126,15 +134,24 @@ local function runStrategy(sname, trades, etc)
         else
             newPos = 0
         end
-        -- pos < 0: selling the asset causes negative position and positive income
-        -- buy > 0: buying the asset causes positive position and negative income
-        local operationIncome = (pos - newPos)*trade.price
+
+        if newPos ~= pos then
+            dayDealCount = dayDealCount + 1
+            netPos = netPos + (pos - newPos)*price
+            pos = newPos
+        end
+
+        if nextTrade.datetime.day ~= trade.datetime.day then
+            print("OK deals: " .. dayDealCount .. " postion at EOD: " .. netPos)
+            io.stdout:write("processing " .. getDate(nextTrade) .. " ... ")
+            dayDealCount = 0
+        end
+        trade = nextTrade
         pos = newPos
-        income = income + operationIncome
     end
-    income = income + pos*price
-    io.stdout:write("OK, income " .. income .. "\n")
-    return income
+    netPos = netPos + pos*trade.price
+    print("OK deals: " .. dayDealCount .. " postion at EOD: " .. netPos)
+    return netPos
 end
 
 -- creates a 'shallow' copy of specified table

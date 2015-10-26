@@ -17,32 +17,33 @@ adaptive_ma = {
         asset = "RIZ5",
         class = "SPBFUT",
 
-        adaptiveFactor = 1.5e-3,
+        adaptiveFactor = 1,
 
         -- tracking trend
-        avgFactorFast = 0.0001,
-        avgFactorSlow = 1.0434375e-05,
+        avgFactor1 = 0.00115,
+        avgFactor2 = 0.04,
 
         -- tracking deviation
-        avgFactor = 0.01415019375,        -- tracking trend
-        avgFactorM2 = 0.01,
+        avgFactor = 0.02,        -- tracking trend
 
         -- how many trades ignore in very beggining
         ignoreFirst = 300,
         paramsInfo = {
             avgFactor = { min=2.2204460492503131e-16, max=1, step=0.01, relative=true },
-            avgFactorFast = { min=2.2204460492503131e-16, max=1, step=0.01, relative=true },
-            avgFactorSlow = { min=2.2204460492503131e-16, max=1, step=0.01, relative=true },
-            adaptiveFactor = { min=2.2204460492503131e-16, max=1, step=0.01, relative=true },  
+            avgFactor1 = { min=2.2204460492503131e-16, max=1, step=0.01, relative=true },
+            avgFactor2 = { min=2.2204460492503131e-16, max=1, step=0.01, relative=true },
+            adaptiveFactor = { min=2.2204460492503131e-16, max=10, step=0.01, relative=true },  
         },
+        schedule = {
+            { from = { hour=9, min=0 }, to = { hour = 21, min = 45 } } 
+        }
     },
 
     ui_mapping = {
         {name="asset", title="Ѕумага", ctype=QTABLE_STRING_TYPE, width=8, format="%s" },
         {name="lastPrice", title="÷ена", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
-        {name="avgPriceFast", title="—редн€€ цена 1", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
-        {name="avgPriceSlow", title="—редн€€ цена 2",  ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
-        {name="deviation",title="—тд. ќтклонение", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.2f" },
+        {name="avgPrice1", title="—редн€€ цена 1", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
+        {name="avgPrice2", title="—редн€€ цена 2",  ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
         {name="charFunction", title="ќчарование", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
     }
 }
@@ -61,16 +62,11 @@ function adaptive_ma.create(etc)
         etc = { },
 
         state = {
-            lastPrice = 0,
-            avgPriceFast = 0,
-            avgPriceSlow = 0,
-            deviation = 0,
+            lastPrice = false,
+            avgPrice1 = 0,
+            avgPrice2 = 0,
             charFunction = 0,
-
-            meanPrice = nil,    -- super fast average
-            dispersion = 0,
-            deviation = 0,
-
+            meanPrice = 0,    -- super fast average
             tradeCount = 0,
         }
     }
@@ -87,9 +83,8 @@ function adaptive_ma.create(etc)
         state = {
             asset = self.etc.asset,
             lastPrice = 0,
-            avgPriceFast = 0,
-            avgPriceSlow = 0,
-            deviation = 0,
+            avgPrice1 = 0,
+            avgPrice2 = 0,
             charFunction = 0,
         }
     }
@@ -101,7 +96,7 @@ function adaptive_ma.create(etc)
     --   0 - do not hold
     --   1 - long
     --  -1 - short
-    function strategy.onTrade(trade)
+    function strategy.onTrade(trade, datetime)
         -- filter out alien trades
         local etc = self.etc
         if trade.sec_code ~= etc.asset or trade.class_code ~= etc.class then
@@ -113,8 +108,8 @@ function adaptive_ma.create(etc)
         local state = self.state
         if not state.meanPrice then
             -- the very first trade
-            state.avgPriceFast = price
-            state.avgPriceSlow = price
+            state.avgPrice1 = price
+            state.avgPrice2 = price
             state.meanPrice = price
         end
 
@@ -123,7 +118,7 @@ function adaptive_ma.create(etc)
         end
 
         local function adaptiveAverage(v0, v1, k)
-            local adaptedK = k + math.min(etc.avgFactor - k, ((state.meanPrice - v0)/price)^2*etc.adaptiveFactor)
+            local adaptedK = k + math.min(etc.avgFactor - k, math.abs(state.meanPrice - v0)/state.meanPrice*etc.adaptiveFactor)
             return average(v0, v1, adaptedK)
         end
 
@@ -132,15 +127,12 @@ function adaptive_ma.create(etc)
 
         -- super fast moving average and deviation
         state.meanPrice = average(state.meanPrice, price, etc.avgFactor)
-        local dispersion = (price - state.meanPrice)^2
-        state.dispersion = average(state.dispersion, dispersion, etc.avgFactorM2)
-        state.deviation = state.dispersion^0.5
 
         -- fast avergage
-        state.avgPriceFast = adaptiveAverage(state.avgPriceFast, price, etc.avgFactorFast)
-        state.avgPriceSlow = adaptiveAverage(state.avgPriceSlow, price, etc.avgFactorSlow)
+        state.avgPrice1 = adaptiveAverage(state.avgPrice1, price, etc.avgFactor1)
+        state.avgPrice2 = adaptiveAverage(state.avgPrice2, price, etc.avgFactor2)
 
-        local charFunction = state.avgPriceFast - state.avgPriceSlow
+        local charFunction = state.avgPrice1 - state.avgPrice2
         state.charFunction = charFunction
 
         -- Standard ration of deviations of two averaged values will be the same as
@@ -149,16 +141,33 @@ function adaptive_ma.create(etc)
 
         local signal = 0
         if state.tradeCount > etc.ignoreFirst then
-            local threshold = 3*state.deviation*(etc.avgFactorFast + etc.avgFactorSlow)/etc.avgFactor
-            if charFunction > threshold then
+            if charFunction > 0 then
                 signal = 1
-            elseif charFunction < -threshold then
+            elseif charFunction < 0 then
                 signal = -1
             end
         end
 
         -- update UI state
-        copyValues(state, strategy.state, strategy.state)
+        strategy.state = state
+
+        -- check schedule
+        local function makeTimeStamp(datetime)
+            return datetime.hour*3600 + (datetime.min or 0)*60 + (datetime.sec or 0)
+        end
+
+        local currTime = makeTimeStamp(datetime)
+        local tradingAllowed = false
+        
+        for _, row in ipairs(etc.schedule) do
+            local from = makeTimeStamp(row.from)
+            local to = makeTimeStamp(row.to)
+            --print(currtime, from, to)
+            if currTime >= from and currTime < to then
+                tradingAllowed = true
+                break
+            end
+        end
 
         return signal
     end
