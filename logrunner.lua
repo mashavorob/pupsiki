@@ -165,7 +165,7 @@ end
     
 local function optimizeParam(sname, etc, trades, cincome, pname)
 
-    local attempt, maxAttempts = 0, 5
+    local attempt, maxAttempts = 0, 10
     local factor = 1
     local direction = 1
 

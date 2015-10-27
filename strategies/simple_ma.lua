@@ -9,6 +9,12 @@
 # The correct encoding is CP1251. In VIm you may use command:
 #   :e ++enc=cp1251
 # or enable modeline in your .vimrc
+
+Total income before optimization:   13624.496362368
+Total income after optimization:    13632.31295293
+Best parameters are:
+    'avgFactor1' = 0.016298217773438
+    'avgFactor2' = 0.0389013671875
 ]]
 
 simple_ma = {
@@ -17,15 +23,15 @@ simple_ma = {
         class = "SPBFUT",
 
         -- tracking trend
-        avgFactor1 = 0.0115,
-        avgFactor2 = 0.04,
+        avgFactor1 = 0.016298217773438,
+        avgFactor2 = 0.0389013671875,
 
         -- wait for stat
         ignoreFirst = 100,
 
         paramsInfo = {
-            avgFactor1 = { min=2.2204460492503131e-16, max=1, step=0.1, relative=true },
-            avgFactor2 = { min=2.2204460492503131e-16, max=1, step=0.1, relative=true },
+            avgFactor1 = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
+            avgFactor2 = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
         },
         schedule = {
             { from = { hour=9, min=0 }, to = { hour = 21, min = 45 } } 
@@ -116,8 +122,8 @@ function simple_ma.create(etc)
         local charFunction = state.avgPrice1 - state.avgPrice2
         state.charFunction = charFunction
 
-        local signal = 0
         state.tradeCount = state.tradeCount + 1
+        local signal = 0
         if state.tradeCount > etc.ignoreFirst then
             if charFunction > 0 then
                 signal = 1

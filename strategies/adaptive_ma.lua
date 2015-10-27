@@ -1,7 +1,6 @@
 --[[
 #
 # Простейшая стратегия основанная на скользящих средних
-# с параболлической адаптацией
 #
 # vi: ft=lua:fenc=cp1251 
 #
@@ -10,6 +9,15 @@
 # The correct encoding is CP1251. In VIm you may use command:
 #   :e ++enc=cp1251
 # or enable modeline in your .vimrc
+
+New parameters found:   Yes
+Total income before optimization:   13202.35129701
+Total income after optimization:    13765.727497642
+Best parameters are:
+    'avgFactor1' = 0.016285367310047
+    'avgFactor' = 0.069365344941616
+    'avgFactor2' = 0.03875
+    'adaptiveFactor' = 16
 ]]
 
 adaptive_ma = {
@@ -17,22 +25,22 @@ adaptive_ma = {
         asset = "RIZ5",
         class = "SPBFUT",
 
-        adaptiveFactor = 1,
+        avgFactor = 0.069365344941616,
+        adaptiveFactor= 10,
 
         -- tracking trend
-        avgFactor1 = 0.00115,
-        avgFactor2 = 0.04,
+        avgFactor1 = 0.016285367310047,
+        avgFactor2 = 0.03875,
 
-        -- tracking deviation
-        avgFactor = 0.02,        -- tracking trend
+        -- wait for stat
+        ignoreFirst = 100,
 
-        -- how many trades ignore in very beggining
-        ignoreFirst = 300,
         paramsInfo = {
-            avgFactor = { min=2.2204460492503131e-16, max=1, step=0.01, relative=true },
-            avgFactor1 = { min=2.2204460492503131e-16, max=1, step=0.01, relative=true },
-            avgFactor2 = { min=2.2204460492503131e-16, max=1, step=0.01, relative=true },
-            adaptiveFactor = { min=2.2204460492503131e-16, max=10, step=0.01, relative=true },  
+            avgFactor = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
+            adaptiveFactor = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
+            avgFactor1 = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
+            avgFactor2 = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
+
         },
         schedule = {
             { from = { hour=9, min=0 }, to = { hour = 21, min = 45 } } 
@@ -58,15 +66,16 @@ function adaptive_ma.create(etc)
             end
         end
     end
+
     local self = {
         etc = { },
 
         state = {
             lastPrice = false,
+            meanPrice = 0,
             avgPrice1 = 0,
             avgPrice2 = 0,
             charFunction = 0,
-            meanPrice = 0,    -- super fast average
             tradeCount = 0,
         }
     }
@@ -83,6 +92,7 @@ function adaptive_ma.create(etc)
         state = {
             asset = self.etc.asset,
             lastPrice = 0,
+            meanPrice = 0,
             avgPrice1 = 0,
             avgPrice2 = 0,
             charFunction = 0,
@@ -102,15 +112,15 @@ function adaptive_ma.create(etc)
         if trade.sec_code ~= etc.asset or trade.class_code ~= etc.class then
             return
         end
-    
+
         -- process averages
         local price = trade.price
         local state = self.state
-        if not state.meanPrice then
+        if not state.lastPrice then
             -- the very first trade
+            state.meanPrice = price
             state.avgPrice1 = price
             state.avgPrice2 = price
-            state.meanPrice = price
         end
 
         local function average(v0, v1, k)
@@ -118,27 +128,20 @@ function adaptive_ma.create(etc)
         end
 
         local function adaptiveAverage(v0, v1, k)
-            local adaptedK = k + math.min(etc.avgFactor - k, math.abs(state.meanPrice - v0)/state.meanPrice*etc.adaptiveFactor)
-            return average(v0, v1, adaptedK)
+            local diff = (state.meanPrice - v0)/state.meanPrice
+            local ak = math.min(etc.avgFactor, k + diff^2*etc.adaptiveFactor)
+            return v0 + ak*(v1 - v0)
         end
 
         state.lastPrice = trade.price
-        state.tradeCount = state.tradeCount + 1
-
-        -- super fast moving average and deviation
         state.meanPrice = average(state.meanPrice, price, etc.avgFactor)
-
-        -- fast avergage
         state.avgPrice1 = adaptiveAverage(state.avgPrice1, price, etc.avgFactor1)
         state.avgPrice2 = adaptiveAverage(state.avgPrice2, price, etc.avgFactor2)
 
         local charFunction = state.avgPrice1 - state.avgPrice2
         state.charFunction = charFunction
 
-        -- Standard ration of deviations of two averaged values will be the same as
-        -- ratio of their averaging factors. So the strategy threshold should be equal 
-        -- to 3 sums of slow and fast deviations
-
+        state.tradeCount = state.tradeCount + 1
         local signal = 0
         if state.tradeCount > etc.ignoreFirst then
             if charFunction > 0 then
@@ -169,6 +172,9 @@ function adaptive_ma.create(etc)
             end
         end
 
+        if not tradingAllowed then
+            signal = 0
+        end
         return signal
     end
     return strategy
