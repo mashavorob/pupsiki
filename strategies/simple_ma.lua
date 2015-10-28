@@ -77,6 +77,7 @@ function simple_ma.create(etc)
     end
 
     local strategy = {
+        title = "simple-ma-[" .. etc.class .. "-" .. etc.asset .. "]",
         ui_mapping = simple_ma.ui_mapping,
         etc = { }, -- readonly
         state = {
@@ -101,6 +102,8 @@ function simple_ma.create(etc)
         if trade.sec_code ~= etc.asset or trade.class_code ~= etc.class then
             return
         end
+
+        datetime = datetime or trade.datetime
 
         -- process averages
         local price = trade.price
@@ -142,6 +145,7 @@ function simple_ma.create(etc)
 
         local currTime = makeTimeStamp(datetime)
         local tradingAllowed = false
+        local status = false
         
         for _, row in ipairs(etc.schedule) do
             local from = makeTimeStamp(row.from)
@@ -155,8 +159,9 @@ function simple_ma.create(etc)
 
         if not tradingAllowed then
             signal = 0
+            status = "Рынок закрыт"
         end
-        return signal
+        return signal, status
     end
     return strategy
 end

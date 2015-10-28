@@ -17,7 +17,7 @@
   The function also creates and shows window that corresponds to the table
 
   Parameters:
-    folder - folder for saving window parameters
+    posfile - file for saving window parameters
     title - window title
     cols - column that specifes columns to insert. The format is:
         {
@@ -58,7 +58,7 @@
 
 qtable = {}
 
-function qtable.create(folder, title, cols)
+function qtable.create(posfile, title, cols)
 
     local function Dummy() end
     self = { 
@@ -66,7 +66,7 @@ function qtable.create(folder, title, cols)
         caption=title,
         columns=cols,
         colByName={},
-        cfgFile=folder .. "\\" .. "window-pos",
+        cfgFile=posfile,
         posCache="",
         onStartStop=Dummy,
         onHalt=Dummy
@@ -107,7 +107,10 @@ function qtable.create(folder, title, cols)
         for colName,val in pairs(data) do
             local colIndex = self.colByName[colName]
             if colIndex then
-                local formatedVal = string.format(self.columns[colIndex].format, val)
+                local formatedVal = false
+                if not pcall( function() formatedVal = string.format(self.columns[colIndex].format, val) end) then
+                    formatedVal = val
+                end
                 SetCell(self.id, row, colIndex - 1, formatedVal)
             end
         end
@@ -157,7 +160,7 @@ function qtable.create(folder, title, cols)
         self.onHalt = fn
     end
 
-    local res = SetTableNotificationCallback(self.id, onMessage)
+    local res = SetTableNotificationCallback(self.id, t.onMessage)
     assert(res, "SetTableNotificationCallback() returned bad status")
 
     return t;

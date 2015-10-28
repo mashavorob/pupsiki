@@ -13,7 +13,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-require("csvlog")
+require("quik-logger")
 
 local unitTests = {
     csvlog = csvlog.getTestSuite()
@@ -26,6 +26,7 @@ for uname,units in pairs(unitTests) do
         io.write(string.format("%s.%s - ", uname, tname))
         io.flush()
         if pcall( test ) then
+        --if test() then
             io.write("OK\n")
         else
             io.write("Failed\n")

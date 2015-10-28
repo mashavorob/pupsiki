@@ -1,10 +1,10 @@
 --[[
 #
-# пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅ csv пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ Quik
+# Запись и чтение csv логов для роботов Quik
 #
 # vi: ft=lua:fenc=cp1251 
 #
-# пїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
+# Если Вы можете прочитать эту строку то все нормально
 # If you cannot read the line above you editor use wrong encoding
 # The correct encoding is CP1251. In VIm you may use command:
 #   :e ++enc=cp1251
@@ -27,35 +27,36 @@ csvlog = {}
         {
             write(record) - writes a new record to the log
                             record is a table, which keys must muatch with column names
-            close()       - closes the log file
+            close()       - closes the log file_
         }
 ]]
-function csvlog.createWriter(fname, columns)
+function csvlog.create(fname, columns)
     fname = os.date(fname)
     local self = { 
         columns = columns,
-        file = assert(io.open(fname, "w+"))
+        file_ = assert(io.open(fname, "w+"))
     }
     
-    for i,n in ipairs(self.column) do
+    for i,n in ipairs(self.columns) do        
         local sep = (i == 1) and "" or ","
-        self.file:write(sep, n)
+        self.file_:write(sep ..  n)
     end
+    self.file_:write("\n")
+    self.file_:flush()
 
-    local t = {
-        write = function(record)
-            for i,n in ipairs(self.column) do
-                local sep = (i == 1) and "" or ","
-                local val = record[n] or ""
-                self.file:write(sep, val)
-            end
-            self.file:write("\n")
-            self.file:flush()
-        end,
-        close = function()
-            self.file:close()
-        end,
-    }
+    local t = {}
+    function t.write(record)
+        for i,n in ipairs(self.columns) do
+            local sep = (i == 1) and "" or ","
+            local val = record[n] or ""
+            self.file_:write(sep, val)
+        end
+        self.file_:write("\n")
+        self.file_:flush()
+    end
+    function t.close()
+        self.file_:close()
+    end
     return t;
 end
 
@@ -63,7 +64,7 @@ end
 function csvlog.createReader(fname)
     local self = {
         columns = {}, -- fill later
-        file = assert(io.open(fname, "r"))
+        file_ = assert(io.open(fname, "r"))
     }
 
     local function trim(s)
@@ -81,12 +82,12 @@ function csvlog.createReader(fname)
         end
         if pos == 1 and string.len(s) > 0 then
             table.insert(res, trim(s))
-        else -- if pos > 1 then
+        elseif pos > 1 then
             table.insert(res, trim(string.sub(s, pos)))
         end
         return res
     end
-
+    
     local function build(arr, names)
         local res = { }
         for i, name in ipairs(names) do
@@ -95,26 +96,205 @@ function csvlog.createReader(fname)
         return res
     end
 
-    -- read headers
-    local ln = assert(self.file:read("*line"), "CSV headers are expected in the first line of the file " .. fname)
+    local function loadLineFromFile()
+        local ln = self.file_:read("*line")
+        if ln then
+            return trim(ln)
+        end
+    end
 
+    -- read headers
+    local ln = assert(loadLineFromFile(), "CSV headers are expected in the first line of the file_ " .. fname)
 
     self.columns = split(ln)
+    self.header = ln
+  
     assert(#self.columns > 0, "At least one column must be present")
 
-    local reader = { }
-
-    function reader.loadLine()
-        local ln = self.file:read("*line")
+    local t = { }
+    function t.loadLine()
+        local ln = loadLineFromFile()
+        while (ln and (ln == self.header)) do
+            ln = loadLineFromFile()
+        end
         if ln then
             return build(split(ln), self.columns)
         end
     end
-    function reader.allLines()
-        return reader.loadLine
+    function t.allLines()
+        return t.loadLine
     end
-    function reader.close()
-        self.file:close()
+    function t.close()
+        self.file_:close()
     end
-    return reader
+    return t
+end
+
+function csvlog.getTestSuite()
+    local testSuite = { }
+    function testSuite.emptyFile()
+        local fname = os.tmpname()
+
+        -- create empty file
+        local f = assert(io.open(fname, "w"))
+        f:close()
+
+        if pcall(csvlog.createReader, fname) then
+            assert()
+        end
+    end
+    function testSuite.noHeader()
+        local fname = os.tmpname()
+
+        -- create empty file
+        local f = assert(io.open(fname, "w"))
+        f:write("\n1,2,3\n")
+        f:close()
+
+        if pcall(csvlog.createReader, fname) then
+            assert()
+        end
+        return true
+    end
+    function testSuite.oneHeader()
+        local fname = os.tmpname()
+
+        -- create empty file
+        local f = assert(io.open(fname, "w"))
+        f:write("a,b,c\n")
+        f:close()
+
+        assert(csvlog.createReader(fname))
+    end
+    function testSuite.oneHeaderOneCol()
+        local fname = os.tmpname()
+
+        -- create empty file
+        local f = assert(io.open(fname, "w"))
+        f:write("a")
+        f:close()
+
+        assert(csvlog.createReader(fname))
+    end
+    function testSuite.oneColOneLine()
+        local fname = os.tmpname()
+
+        -- create empty file
+        local f = assert(io.open(fname, "w"))
+        f:write("a\n1")
+        f:close()
+
+        local parser = assert(csvlog.createReader(fname))
+
+        local row = assert(parser.loadLine())
+        assert(row.a == "1")
+        assert( not parser.loadLine())
+    end
+    function testSuite.oneLine()
+        local fname = os.tmpname()
+
+        -- create empty file
+        local f = assert(io.open(fname, "w"))
+        f:write("a,b\n1,2")
+        f:close()
+
+        local parser = assert(csvlog.createReader(fname))
+
+        local row = assert(parser.loadLine())
+        assert(row.a == "1")
+        assert(row.b == "2")
+        assert( not parser.loadLine())
+    end
+    function testSuite.iterateThroughLines()
+        local fname = os.tmpname()
+
+        -- create empty file
+        local f = assert(io.open(fname, "w"))
+        f:write("a,b\n1,2\n2,3\n3,4\n")
+        f:close()
+
+        local parser = assert(csvlog.createReader(fname))
+        local count = 0
+
+        for row in parser.allLines() do
+            count = count + 1
+            assert(tonumber(row.a) == count)
+            assert(tonumber(row.b) == count + 1)
+        end
+        assert(count == 3)
+    end
+    function testSuite.duplicatedHeader()
+        local fname = os.tmpname()
+
+        -- create empty file
+        local f = assert(io.open(fname, "w"))
+        f:write("a,b\n1,2\n2,3\na,b\n3,4\n")
+        f:close()
+
+        local parser = assert(csvlog.createReader(fname))
+        local count = 0
+
+        for row in parser.allLines() do
+            count = count + 1
+            assert(tonumber(row.a) == count)
+            assert(tonumber(row.b) == count + 1)
+        end
+        assert(count == 3)
+    end
+    function testSuite.writeRead()
+        local fname = os.tmpname()
+        if os.rename(fname, fname) then
+            os.remove(fname)
+        end
+
+        local logger = assert(csvlog.create(fname, { 'a', 'b' }))
+
+        logger.write( {a=1, b=2} )
+        logger.write( {a=2, b=3} )
+        logger.write( {a=3, b=4} )
+        logger.write( {a=4, b=5} )
+        logger.close()
+
+        local parser = assert(csvlog.createReader(fname))
+        local count = 0
+
+        for row in parser.allLines() do
+            count = count + 1
+            assert(tonumber(row.a) == count)
+            assert(tonumber(row.b) == count + 1)
+        end
+        assert(count == 4)
+    end
+    function testSuite.writeReadManyLogs()
+        local fname = os.tmpname()
+        local fname1 = fname .. ".log-1"
+        local fname2 = fname .. ".log-2"
+        if os.rename(fname1, fname1) then
+            os.remove(fname1)
+        end
+        if os.rename(fname2, fname2) then
+            os.remove(fname2)
+        end
+
+        local logger1 = assert(csvlog.create(fname1, { 'a', 'b' }))
+        local logger2 = assert(csvlog.create(fname2, { 'c', 'd' }))
+
+        logger1.write( {a=1, b=2} )
+        logger1.write( {a=2, b=3} )
+        logger2.close()
+        logger1.write( {a=3, b=4} )
+        logger1.write( {a=4, b=5} )
+        logger1.close()
+
+        local parser = assert(csvlog.createReader(fname1))
+        local count = 0
+
+        for row in parser.allLines() do
+            count = count + 1
+            assert(tonumber(row.a) == count)
+            assert(tonumber(row.b) == count + 1)
+        end
+        assert(count == 4)
+    end
+   return testSuite
 end

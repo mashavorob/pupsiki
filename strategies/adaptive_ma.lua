@@ -1,6 +1,7 @@
 --[[
 #
 # ѕростейша€ стратеги€ основанна€ на скольз€щих средних
+# с парраболической адаптацией
 #
 # vi: ft=lua:fenc=cp1251 
 #
@@ -50,8 +51,8 @@ adaptive_ma = {
     ui_mapping = {
         {name="asset", title="Ѕумага", ctype=QTABLE_STRING_TYPE, width=8, format="%s" },
         {name="lastPrice", title="÷ена", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
-        {name="avgPrice1", title="—редн€€ цена 1", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
-        {name="avgPrice2", title="—редн€€ цена 2",  ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
+        {name="avgPrice1", title="—редн€€ цена 1", ctype=QTABLE_DOUBLE_TYPE, width=17, format="%.0f" },
+        {name="avgPrice2", title="—редн€€ цена 2",  ctype=QTABLE_DOUBLE_TYPE, width=17, format="%.0f" },
         {name="charFunction", title="ќчарование", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
     }
 }
@@ -87,17 +88,12 @@ function adaptive_ma.create(etc)
     end
 
     local strategy = {
+        title = "adaptive--[" .. self.etc.class .. "-" .. self.etc.asset .. "]",
         ui_mapping = adaptive_ma.ui_mapping,
         etc = { }, -- readonly
-        state = {
-            asset = self.etc.asset,
-            lastPrice = 0,
-            meanPrice = 0,
-            avgPrice1 = 0,
-            avgPrice2 = 0,
-            charFunction = 0,
-        }
+        state = self.state,
     }
+    self.state.asset = self.etc.asset
 
     copyValues(self.etc, strategy.etc, self.etc)
 
@@ -112,6 +108,8 @@ function adaptive_ma.create(etc)
         if trade.sec_code ~= etc.asset or trade.class_code ~= etc.class then
             return
         end
+
+        datetime = datetime or trade.datetime
 
         -- process averages
         local price = trade.price
@@ -161,6 +159,7 @@ function adaptive_ma.create(etc)
 
         local currTime = makeTimeStamp(datetime)
         local tradingAllowed = false
+        local status = false
         
         for _, row in ipairs(etc.schedule) do
             local from = makeTimeStamp(row.from)
@@ -174,8 +173,9 @@ function adaptive_ma.create(etc)
 
         if not tradingAllowed then
             signal = 0
+            status = "Hынок закрыт"
         end
-        return signal
+        return signal, status
     end
     return strategy
 end

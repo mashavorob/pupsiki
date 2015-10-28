@@ -30,7 +30,7 @@ csvlog = {}
             close()       - closes the log file_
         }
 ]]
-function csvlog.createWriter(fname, columns)
+function csvlog.create(fname, columns)
     fname = os.date(fname)
     local self = { 
         columns = columns,
@@ -42,6 +42,7 @@ function csvlog.createWriter(fname, columns)
         self.file_:write(sep ..  n)
     end
     self.file_:write("\n")
+    self.file_:flush()
 
     local t = {}
     function t.write(record)
@@ -264,5 +265,36 @@ function csvlog.getTestSuite()
         end
         assert(count == 4)
     end
-    return testSuite
+    function testSuite.writeReadManyLogs()
+        local fname = os.tmpname()
+        local fname1 = fname .. ".log-1"
+        local fname2 = fname .. ".log-2"
+        if os.rename(fname1, fname1) then
+            os.remove(fname1)
+        end
+        if os.rename(fname2, fname2) then
+            os.remove(fname2)
+        end
+
+        local logger1 = assert(csvlog.createWriter(fname1, { 'a', 'b' }))
+        local logger2 = assert(csvlog.createWriter(fname2, { 'c', 'd' }))
+
+        logger1.write( {a=1, b=2} )
+        logger1.write( {a=2, b=3} )
+        logger2.close()
+        logger1.write( {a=3, b=4} )
+        logger1.write( {a=4, b=5} )
+        logger1.close()
+
+        local parser = assert(csvlog.createReader(fname1))
+        local count = 0
+
+        for row in parser.allLines() do
+            count = count + 1
+            assert(tonumber(row.a) == count)
+            assert(tonumber(row.b) == count + 1)
+        end
+        assert(count == 4)
+    end
+   return testSuite
 end

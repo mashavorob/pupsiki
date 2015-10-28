@@ -1,2 +1,4 @@
-.conf
 **.swp
+.*
+**.wpos
+logs/*.log
