@@ -20,7 +20,9 @@ function recorder.create(etc)
     local self = {
         strategy = strategy,
         etc = {
-            allTradesLog = "logs/all-trade-events-%Y-%m-%d.log",
+            logs = {
+                allTradesLog = "logs/all-trade-events-%Y-%m-%d.log",
+            },
         },
         logs = {
             allTradesLog = false,
@@ -40,12 +42,8 @@ function recorder.create(etc)
 
     self.qtable = qtable.create("quik-recorder.wpos", "Рекордер", self.ui_mapping)
 
-    local allTradesLogColumns = {"date-time", "unix-time",
-            "trade_num", "flags", "price", "qty", "value", "accruedint", "yield", "settlecode", 
-            "sec_code", "class_code"}
-
     local function dateTimeAsStr(unixTime, ms)
-        ms = ms and string.format("%02d", ms) or ""
+        ms = ms and string.format(".%03d", ms) or ""
         return os.date("%Y-%m-%dT%H-%M-%S", math.floor(unixTime)) .. ms
     end
 
@@ -57,16 +55,22 @@ function recorder.create(etc)
         record["unix-time"] = tstamp
     end
 
-    local function checkLogs()
-        local day = math.floor(os.time()/3600/24)
+    local logColumns = {
+        allTradesLog = {"date-time", "unix-time",
+            "trade_num", "flags", "price", "qty", "value", "accruedint", "yield", "settlecode", 
+            "sec_code", "class_code"},
+    }
 
-        if day ~= self.day then
-            for _, log in pairs(self.logs) do
-                if log then 
-                    log.close()
+    local function checkLogs()
+        for log, fname in pairs(self.etc.logs) do
+            fname = os.date(fname)
+            if not self.logs[log] or fname ~= self.logs[log].getFileName() then
+                local oldLog = self.logs[log]
+                self.logs[log] = csvlog.create(fname, logColumns[log])
+                if oldLog then
+                    oldLog.close()
                 end
             end
-            self.logs.allTradesLog = csvlog.create(self.etc.allTradesLog, allTradesLogColumns)
         end
     end
 
@@ -88,7 +92,6 @@ function recorder.create(etc)
         end
     end
 
-
     function r.onIdle()
         self.qtable.onIdle()
         checkLogs()
@@ -97,11 +100,19 @@ function recorder.create(etc)
 
     function r.onAllTrade(trade)
         enrichRecord(trade)
-        self.logs.tradesLog.write(trade)
+        self.logs.allTradesLog.write(trade)
     end
 
     function r.isClosed()
         return self.qtable.isClosed()
+    end
+
+    function r.onClose()
+        for _, log in pairs(self.logs) do
+            if log then 
+                log.close()
+            end
+        end
     end
 
     checkLogs()

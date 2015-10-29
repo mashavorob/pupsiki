@@ -65,4 +65,5 @@ function main()
         strategyRunner.onIdle()
         sleep(100)
     end
+    strategyRunner.onClose()
 end

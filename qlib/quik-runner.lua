@@ -37,11 +37,11 @@ function runner.create(strategy, etc)
         etc = {
             asset = strategy.etc.asset,
             class = strategy.etc.class,
-
-            ordersLog = "logs/orders[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
-            replyLog  = "logs/orders-replies[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
-            tradesLog = "logs/trade-events[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
-            allTradesLog = "logs/all-trade-events[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
+            logs = {
+                ordersLog = "logs/orders[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
+                replyLog  = "logs/orders-replies[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
+                tradesLog = "logs/trade-events[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
+            },
             account = "SPBFUT005Z5",
 
             limit = 0.3, -- 30% from money limit
@@ -55,7 +55,6 @@ function runner.create(strategy, etc)
             ordersLog = false,
             replyLog = false,
             tradesLog = false,
-            allTradesLog = false,
         },
         day = false,
         position = 0,
@@ -76,25 +75,8 @@ function runner.create(strategy, etc)
 
     setmetatable( self.etc, { __index = etc } )
 
-    local ordersLogColumns = {"date-time", "unix-time", 
-            "TRANS_ID", "TRANS_CODE", "SECCODE", "CLASSCODE", "ACTION", "ACCOUNT", "TYPE", 
-            "OPERATION", "EXECUTE_CONDITION", "QUANTITY", "PRICE", "status"}
-
-    local replyLogColumns = {"date-time", "unix-time", "trans_id", "status", "result_msg", "time", "uid",
-            "flags", "server_trans_id", "order_num", "price", "quantity", "balance", "account", 
-            "class_code", "sec_code"}
-
-    local tradesLogColumns = {"date-time", "unix-time",
-            "trade_num", "order_num", "account", "price", "qty", "value", "accruedint", "yield", "settlecode",
-            "flags", "price2", "block_securities", "block_securities", "exchange_comission", 
-            "tech_center_comission", "sec_code", "class_code"}
-
-    local allTradesLogColumns = {"date-time", "unix-time",
-            "trade_num", "flags", "price", "qty", "value", "accruedint", "yield", "settlecode", 
-            "sec_code", "class_code"}
-
     local function dateTimeAsStr(unixTime, ms)
-        ms = ms and string.format("%02d", ms) or ""
+        ms = ms and string.format(".%03d", ms) or ""
         return os.date("%Y-%m-%dT%H-%M-%S", math.floor(unixTime)) .. ms
     end
 
@@ -106,23 +88,36 @@ function runner.create(strategy, etc)
         record["unix-time"] = tstamp
     end
 
+    local logColumns = {
+        ordersLog = {"date-time", "unix-time", 
+            "TRANS_ID", "TRANS_CODE", "SECCODE", "CLASSCODE", "ACTION", "ACCOUNT", "TYPE", 
+            "OPERATION", "EXECUTE_CONDITION", "QUANTITY", "PRICE", "status"},
+        replyLog = {"date-time", "unix-time", "trans_id", "status", "time", "uid",
+            "flags", "server_trans_id", "order_num", "price", "quantity", "balance", "account", 
+            "class_code", "sec_code"},
+        tradesLog = {"date-time", "unix-time",
+            "trade_num", "order_num", "account", "price", "qty", "value", "accruedint", "yield", "settlecode",
+            "flags", "price2", "block_securities", "block_securities", "exchange_comission", 
+            "tech_center_comission", "sec_code", "class_code"},
+    }
     local function checkLogs()
-        local day = math.floor(os.time()/3600/24)
-
-        if day ~= self.day then
-            for _, log in pairs(self.logs) do
-                if log then 
-                    log.close()
+        for log, fname in pairs(self.etc.logs) do
+            fname = os.date(fname)
+            if not self.logs[log] or fname ~= self.logs[log].getFileName() then
+                local oldLog = self.logs[log]
+                self.logs[log] = csvlog.create(fname, logColumns[log])
+                if oldLog then
+                    oldLog.close()
                 end
             end
-            self.logs.ordersLog = csvlog.create(self.etc.ordersLog, ordersLogColumns)
-            self.logs.replyLog =  csvlog.create(self.etc.replyLog, replyLogColumns)
-            self.logs.tradesLog = csvlog.create(self.etc.tradesLog, tradesLogColumns)
-            self.logs.allTradesLog = csvlog.create(self.etc.allTradesLog, allTradesLogColumns)
         end
     end
 
     local function getMaxPos(expected)
+        if expected == 0 then
+            return 0
+        end
+
         local n = getNumberOf("futures_client_limits")
         local moneyLimit = 0
         local lastAcc = ''
@@ -166,7 +161,7 @@ function runner.create(strategy, etc)
             return -- sanity check
         else -- diffPos < 0
             quantity = -diffPos
-            price = self.etc.priceMax -- + self.params.priceStep
+            price = self.etc.priceMin -- + self.params.priceStep
             operation = "S"
         end
         local transId = 1
@@ -186,12 +181,12 @@ function runner.create(strategy, etc)
             QUANTITY=string.format("%.0f", quantity),
             PRICE=string.format("%0.f", price),
         }
-        local res = "suicide" --sendTransaction(order)
-        local tstamp = os.time()
+        --local res = "suicide" --sendTransaction(order)
+        local res = sendTransaction(order)
         enrichRecord(order)
         order.status = res
         self.logs.ordersLog.write(order)
-        if res == "" then
+        if res == "" or res == "suicide" then
             self.position = self.position + diffPos
         end
     end
@@ -254,7 +249,6 @@ function runner.create(strategy, etc)
 
     function r.onAllTrade(trade)
         enrichRecord(trade)
-        self.logs.tradesLog.write(trade)
 
         local signal, err = strategy.onTrade(trade)
         if err and type(err) == "string" then
@@ -266,9 +260,9 @@ function runner.create(strategy, etc)
            return
         end
         if signal > 0 then
-            signal = 0
+            signal = 1
         elseif signal < 0 then
-            signal = 0
+            signal = -1
         end
         self.target = getMaxPos(signal)
         executePos()
@@ -288,6 +282,14 @@ function runner.create(strategy, etc)
         return self.qtable.isClosed()
     end
 
+    function r.onClose()
+        for _, log in pairs(self.logs) do
+            if log then 
+                log.close()
+            end
+        end
+    end
+
     checkLogs()
     updateDepoAndPrices()
     self.qtable.setStartStopCallback(onStartStopCallback)
@@ -296,7 +298,7 @@ function runner.create(strategy, etc)
     local n = getNumberOf("futures_client_holding")
     for i = 0,n-1 do
         local row = getItem("futures_client_holding", i)
-        if row.sec_code == self.params.asset then
+        if row.sec_code == self.etc.asset then
             self.position = row.totalnet
             break
         end

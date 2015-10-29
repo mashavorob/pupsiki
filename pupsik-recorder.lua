@@ -53,4 +53,5 @@ function main()
         mdRecorder.onIdle()
         sleep(100)
     end
+    mdRecorder.onClose()
 end

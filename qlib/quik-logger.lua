@@ -30,11 +30,13 @@ csvlog = {}
             close()       - closes the log file_
         }
 ]]
+
 function csvlog.create(fname, columns)
     fname = os.date(fname)
     local self = { 
         columns = columns,
-        file_ = assert(io.open(fname, "w+"))
+        fname = fname,
+        file_ = assert(io.open(fname, "a+"))
     }
     
     for i,n in ipairs(self.columns) do        
@@ -56,6 +58,9 @@ function csvlog.create(fname, columns)
     end
     function t.close()
         self.file_:close()
+    end
+    function t.getFileName()
+        return self.fname
     end
     return t;
 end

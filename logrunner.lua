@@ -137,7 +137,7 @@ local function runStrategy(sname, trades, etc)
 
         if newPos ~= pos then
             dayDealCount = dayDealCount + 1
-            netPos = netPos + (pos - newPos)*price
+            netPos = netPos - (pos - newPos)*price
             pos = newPos
         end
 

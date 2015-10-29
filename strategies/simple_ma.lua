@@ -10,11 +10,13 @@
 #   :e ++enc=cp1251
 # or enable modeline in your .vimrc
 
-Total income before optimization:   13624.496362368
-Total income after optimization:    13632.31295293
+New parameters found:   Yes
+Total income before optimization:   23560
+Total income after optimization:    218460
 Best parameters are:
-    'avgFactor1' = 0.016298217773438
-    'avgFactor2' = 0.0389013671875
+    'avgFactor2' = 0.15936681910739
+    'avgFactor1' = 0.99399548862129
+
 ]]
 
 simple_ma = {
@@ -23,8 +25,8 @@ simple_ma = {
         class = "SPBFUT",
 
         -- tracking trend
-        avgFactor1 = 0.016298217773438,
-        avgFactor2 = 0.0389013671875,
+        avgFactor1 = 0.99399548862129,
+        avgFactor2 = 0.15936681910739,
 
         -- wait for stat
         ignoreFirst = 100,
@@ -77,7 +79,7 @@ function simple_ma.create(etc)
     end
 
     local strategy = {
-        title = "simple-ma-[" .. etc.class .. "-" .. etc.asset .. "]",
+        title = "simple-ma-[" .. self.etc.class .. "-" .. self.etc.asset .. "]",
         ui_mapping = simple_ma.ui_mapping,
         etc = { }, -- readonly
         state = {
