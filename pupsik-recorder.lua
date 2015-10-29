@@ -1,6 +1,6 @@
 --[[
 #
-# Скользящее среднее
+# Запись маркетных данных
 #
 # vi: ft=lua:fenc=cp1251 
 #
@@ -11,7 +11,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-local strategyRunner = false
+local mdRecorder = false
 
 local etc = {
     asset="RIZ5",
@@ -39,30 +39,18 @@ function OnInit(scriptPath)
     local folder = npos and string.sub(srciptPath, 1, npos - 1) or scriptPath
     LUA_PATH = LUA_PATH .. ".\\?.lua;" .. folder .. "\\?.lua"
 
-    assert(require("qlib\\quik-runner"))
-    assert(require("strategies\\" .. etc.sname))
+    assert(require("qlib\\quik-recorder"))
 
-    local factory = assert(_G[etc.sname])
-    local strategy = assert(factory.create(etc))
-
-    strategyRunner = assert(runner.create(strategy, etc))
+    mdRecorder = assert(recorder.create(strategy, etc))
 end
 
 function OnAllTrade(trade)
-    strategyRunner.onAllTrade(trade)
-end
-
-function OnTransReply(reply)
-    strategyRunner.onTransReply(reply)
-end
-
-function OnTrade(trade)
-    strategyRunner.onTrade(trade)
+    mdRecorder.onAllTrade(trade)
 end
 
 function main()
-    while not strategyRunner.isClosed() do
-        strategyRunner.onIdle()
+    while not mdRecorder.isClosed() do
+        mdRecorder.onIdle()
         sleep(100)
     end
 end

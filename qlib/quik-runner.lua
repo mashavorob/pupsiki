@@ -18,6 +18,8 @@ function runner.create(strategy, etc)
     require("qlib/quik-table")
 
     local extra_ui_mapping = { 
+        {name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" },
+        {name="target", title="Цель", ctype=QTABLE_DOUBLE_TYPE, width=8, format="%.0f" },
         {name="state", title="Cостояние", ctype=QTABLE_STRING_TYPE, width=14, format="%s" },
     }
 
@@ -36,10 +38,10 @@ function runner.create(strategy, etc)
             asset = strategy.etc.asset,
             class = strategy.etc.class,
 
-            ordersLog = "logs/orders-%Y-%m-%d.log",
-            replyLog  = "logs/orders-replies-%Y-%m-%d.log",
-            tradesLog = "logs/trade-events-%Y-%m-%d.log",
-            allTradesLog = "logs/all-trade-events-%Y-%m-%d.log",
+            ordersLog = "logs/orders[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
+            replyLog  = "logs/orders-replies[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
+            tradesLog = "logs/trade-events[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
+            allTradesLog = "logs/all-trade-events[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
             account = "SPBFUT005Z5",
 
             limit = 0.3, -- 30% from money limit
@@ -56,13 +58,16 @@ function runner.create(strategy, etc)
             allTradesLog = false,
         },
         day = false,
-        pos = 0,
+        position = 0,
+        target = 0,
         tradingEnabled = false,
         manualHalt = false,
         ui_mapping = ui_mapping,
         qtable = qtable.create(strategy.title .. ".wpos", strategy.title, ui_mapping),
         state = {
             state = "--",
+            position = "--",
+            target = "--",
             err = false,
         },
     }
@@ -83,6 +88,10 @@ function runner.create(strategy, etc)
             "trade_num", "order_num", "account", "price", "qty", "value", "accruedint", "yield", "settlecode",
             "flags", "price2", "block_securities", "block_securities", "exchange_comission", 
             "tech_center_comission", "sec_code", "class_code"}
+
+    local allTradesLogColumns = {"date-time", "unix-time",
+            "trade_num", "flags", "price", "qty", "value", "accruedint", "yield", "settlecode", 
+            "sec_code", "class_code"}
 
     local function dateTimeAsStr(unixTime, ms)
         ms = ms and string.format("%02d", ms) or ""
@@ -109,7 +118,7 @@ function runner.create(strategy, etc)
             self.logs.ordersLog = csvlog.create(self.etc.ordersLog, ordersLogColumns)
             self.logs.replyLog =  csvlog.create(self.etc.replyLog, replyLogColumns)
             self.logs.tradesLog = csvlog.create(self.etc.tradesLog, tradesLogColumns)
-            self.logs.allTradesLog = csvlog.create(self.etc.allTradesLog, tradesLogColumns)
+            self.logs.allTradesLog = csvlog.create(self.etc.allTradesLog, allTradesLogColumns)
         end
     end
 
@@ -133,7 +142,10 @@ function runner.create(strategy, etc)
         return expected
     end
 
-    local function executePos(targetPos)
+    local function executePos()
+
+        local targetPos = self.target
+
         if self.manualHalt then
             return
         end
@@ -142,7 +154,7 @@ function runner.create(strategy, etc)
             targetPos = 0
         end
     
-        local diffPos = math.floor(targetPos - self.pos)
+        local diffPos = math.floor(targetPos - self.position)
 
         local quantity, price, operation = 0, 0, ""
 
@@ -180,7 +192,7 @@ function runner.create(strategy, etc)
         order.status = res
         self.logs.ordersLog.write(order)
         if res == "" then
-            self.pos = self.pos + diffPos
+            self.position = self.position + diffPos
         end
     end
 
@@ -200,6 +212,9 @@ function runner.create(strategy, etc)
             self.state.state = "Торговля"
         end
 
+        self.state.position = self.position
+        self.state.target = self.target
+
         local state = {}
         local hash = ""
         for _, k in ipairs(self.ui_mapping) do
@@ -208,7 +223,6 @@ function runner.create(strategy, etc)
             hash = hash .. "[" .. k.name .. "=" .. v .. "]"
         end
         if hash ~= lastHash  then
-            --message("addrow " .. hash, 3)
             self.qtable.addRow(state)
             lastHash = hash
         end
@@ -235,6 +249,7 @@ function runner.create(strategy, etc)
         
         logStatus()
         updateDepoAndPrices()
+        executePos()
     end
 
     function r.onAllTrade(trade)
@@ -255,8 +270,8 @@ function runner.create(strategy, etc)
         elseif signal < 0 then
             signal = 0
         end
-        local expectedPos = getMaxPos(signal)
-        executePos(expectedPos)
+        self.target = getMaxPos(signal)
+        executePos()
     end
 
     function r.onTransReply(reply)
@@ -282,7 +297,7 @@ function runner.create(strategy, etc)
     for i = 0,n-1 do
         local row = getItem("futures_client_holding", i)
         if row.sec_code == self.params.asset then
-            self.pos = row.totalnet
+            self.position = row.totalnet
             break
         end
     end
