@@ -29,7 +29,7 @@ simple_ma = {
         avgFactor2 = 0.15936681910739,
 
         -- wait for stat
-        ignoreFirst = 100,
+        ignoreFirst = 10,
 
         paramsInfo = {
             avgFactor1 = { min=2.2204460492503131e-16, max=1, step=1, relative=true },

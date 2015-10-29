@@ -59,7 +59,7 @@ function runner.create(strategy, etc)
         day = false,
         position = 0,
         target = 0,
-        tradingEnabled = false,
+        tradingEnabled = true,
         manualHalt = false,
         ui_mapping = ui_mapping,
         qtable = qtable.create(strategy.title .. ".wpos", strategy.title, ui_mapping),

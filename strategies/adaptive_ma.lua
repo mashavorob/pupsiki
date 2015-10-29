@@ -34,7 +34,7 @@ adaptive_ma = {
         avgFactor2 = 0.037163967443485,
 
         -- wait for stat
-        ignoreFirst = 100,
+        ignoreFirst = 10,
 
         paramsInfo = {
             avgFactor = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
