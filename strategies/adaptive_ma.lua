@@ -44,7 +44,7 @@ adaptive_ma = {
 
         },
         schedule = {
-            { from = { hour=9, min=30 }, to = { hour=21, min=00 } } 
+            { from = { hour=10, min=30 }, to = { hour=21, min=00 } } 
         }
     },
 
@@ -53,7 +53,7 @@ adaptive_ma = {
         {name="lastPrice", title="÷ена", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
         {name="avgPrice1", title="—редн€€ цена 1", ctype=QTABLE_DOUBLE_TYPE, width=17, format="%.0f" },
         {name="avgPrice2", title="—редн€€ цена 2",  ctype=QTABLE_DOUBLE_TYPE, width=17, format="%.0f" },
-        {name="charFunction", title="ќчарование", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
+        {name="charFunction", title="“ренд", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
     }
 }
 

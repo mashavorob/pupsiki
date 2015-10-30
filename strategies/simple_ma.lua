@@ -36,7 +36,7 @@ simple_ma = {
             avgFactor2 = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
         },
         schedule = {
-            { from = { hour=9, min=0 }, to = { hour = 21, min = 45 } } 
+            { from = { hour=10, min=0 }, to = { hour = 21, min = 45 } } 
         }
     },
 
@@ -45,7 +45,7 @@ simple_ma = {
         {name="lastPrice", title="Цена", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
         {name="avgPrice1", title="Средняя цена 1", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
         {name="avgPrice2", title="Средняя цена 2",  ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
-        {name="charFunction", title="Очарование", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
+        {name="charFunction", title="Трэнд", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
     }
 }
 
