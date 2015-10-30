@@ -11,11 +11,11 @@
 # or enable modeline in your .vimrc
 
 New parameters found:   Yes
-Total income before optimization:   23560
-Total income after optimization:    218460
+Total income before optimization:   31012
+Total income after optimization:    74128
 Best parameters are:
-    'avgFactor2' = 0.15936681910739
-    'avgFactor1' = 0.99399548862129
+    'avgFactor1' = 0.39088183765051
+    'avgFactor2' = 0.15874429247025
 
 ]]
 
@@ -25,8 +25,8 @@ simple_ma = {
         class = "SPBFUT",
 
         -- tracking trend
-        avgFactor1 = 0.99399548862129,
-        avgFactor2 = 0.15936681910739,
+        avgFactor1 = 0.39088183765051,
+        avgFactor2 = 0.15874429247025,
 
         -- wait for stat
         ignoreFirst = 10,

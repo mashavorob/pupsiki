@@ -12,13 +12,13 @@
 # or enable modeline in your .vimrc
 
 New parameters found:   Yes
-Total income before optimization:   20220
-Total income after optimization:    30820
+Total income before optimization:   15972
+Total income after optimization:    16112
 Best parameters are:
-    'avgFactor' = 0.038510508617885
     'adaptiveFactor' = 1
-    'avgFactor2' = 0.037163967443485
     'avgFactor1' = 0.038824708287165
+    'avgFactor' = 0.037525081989791
+    'avgFactor2' = 0.037309139191311
 ]]
 
 adaptive_ma = {
@@ -26,12 +26,12 @@ adaptive_ma = {
         asset = "RIZ5",
         class = "SPBFUT",
 
-        avgFactor = 0.038510508617885,
-        adaptiveFactor= 1,
+        avgFactor = 0.037525081989791,
+        adaptiveFactor= 2,
 
         -- tracking trend
         avgFactor1 = 0.038824708287165,
-        avgFactor2 = 0.037163967443485,
+        avgFactor2 = 0.037309139191311,
 
         -- wait for stat
         ignoreFirst = 10,

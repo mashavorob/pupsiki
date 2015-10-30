@@ -22,6 +22,7 @@ require("qlib/quik-logger")
 numericMin = 2.22507e-308
 numericMax = 1.79769e+308
 numericEpsilon = 2.22045e-16
+transactionCost = 6
 
 local function usage(args)
     print(args[0] .. "<operation> <strategy> <log> [<log> [<log> ..]")
@@ -114,7 +115,7 @@ local function runStrategy(sname, trades, etc)
     local pos, netPos = 0, 0, 0
     local strategy = loadStrategy(sname, etc)
     local trade = trades[1]
-    local dayDealCount = 0
+    local dayDealCount, transactionCount = 0,0
 
     local function getDate(trade)
         local date = trade.datetime
@@ -137,12 +138,13 @@ local function runStrategy(sname, trades, etc)
 
         if newPos ~= pos then
             dayDealCount = dayDealCount + 1
+            transactionCount = transactionCount + 1
             netPos = netPos - (pos - newPos)*price
             pos = newPos
         end
 
         if nextTrade.datetime.day ~= trade.datetime.day then
-            print("OK deals: " .. dayDealCount .. " postion at EOD: " .. netPos)
+            print("OK transactions: " .. dayDealCount .. " postion at EOD: " .. (netPos - dayDealCount*transactionCost))
             io.stdout:write("processing " .. getDate(nextTrade) .. " ... ")
             dayDealCount = 0
         end
@@ -150,8 +152,8 @@ local function runStrategy(sname, trades, etc)
         pos = newPos
     end
     netPos = netPos + pos*trade.price
-    print("OK deals: " .. dayDealCount .. " postion at EOD: " .. netPos)
-    return netPos
+    print("OK transactions: " .. dayDealCount .. " postion at EOD: " .. netPos)
+    return netPos - transactionCost*transactionCount
 end
 
 -- creates a 'shallow' copy of specified table
