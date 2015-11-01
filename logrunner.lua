@@ -251,6 +251,10 @@ local function doDescent(sname, trades, etc)
     while flag do
         income, etc, flag = optimizeAllParams(income, etc)
     end
+
+    print("\nRunning with Optimal parameters:")
+    runStrategy(sname, trades, etc)
+
     return income, etc, originalIncome
 end
 
@@ -267,6 +271,13 @@ local function OptimizeParams(sname, trades, etc)
 
     for pname,_ in pairs(etc.paramsInfo) do
         print("", "'" .. pname .. "' = " .. etc[pname])
+    end
+    print("")
+    io.stdout:write("Saving parameters ... ")
+    if loadStrategy(sname, etc).etc:save() then
+        print("OK")
+    else
+        print("failed")
     end
 end
 

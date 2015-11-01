@@ -19,10 +19,14 @@ Best parameters are:
 
 ]]
 
+require("qlib/quik-etc")
+
 simple_ma = {
     etc = { -- master configuration
         asset = "RIZ5",
         class = "SPBFUT",
+        title = "adaptive-ma",
+        confFolder = "conf",
 
         -- tracking trend
         avgFactor1 = 0.39088183765051,
@@ -51,17 +55,8 @@ simple_ma = {
 
 function simple_ma.create(etc)
 
-    local function copyValues(src, dst, master)
-        for k, v in pairs(master) do
-            local v1 = src[k] 
-            if v1 then
-                dst[k] = v1
-            end
-        end
-    end
-
     local self = {
-        etc = { },
+        etc = config.create(simple_ma.etc),
 
         state = {
             lastPrice = false,
@@ -71,17 +66,11 @@ function simple_ma.create(etc)
             tradeCount = 0,
         }
     }
-    -- copy master configuration
-    copyValues(simple_ma.etc, self.etc, simple_ma.etc)
-    -- overwrite parameters
-    if etc then
-        copyValues(etc, self.etc, self.etc)
-    end
 
     local strategy = {
         title = "simple-ma-[" .. self.etc.class .. "-" .. self.etc.asset .. "]",
         ui_mapping = simple_ma.ui_mapping,
-        etc = { }, -- readonly
+        etc = self.etc,
         state = {
             asset = self.etc.asset,
             lastPrice = 0,
@@ -90,8 +79,6 @@ function simple_ma.create(etc)
             charFunction = 0,
         }
     }
-
-    copyValues(self.etc, strategy.etc, self.etc)
 
     -- the main function: accepts trade market data flow  on input 
     -- returns target position:
