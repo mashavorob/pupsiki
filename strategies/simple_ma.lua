@@ -23,6 +23,7 @@ simple_ma = {
     etc = { -- master configuration
         asset = "RIZ5",
         class = "SPBFUT",
+        priceStep= 10,
 
         -- tracking trend
         avgFactor1 = 0.39088183765051,

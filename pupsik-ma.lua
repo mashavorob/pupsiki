@@ -15,7 +15,7 @@ local strategyRunner = false
 
 local etc = {
     asset="RIZ5",
-    sname = "simple_ma",
+    sname = "adaptive_ma",
 }
 
 function OnInit(scriptPath)

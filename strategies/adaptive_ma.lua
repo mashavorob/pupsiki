@@ -12,35 +12,40 @@
 # or enable modeline in your .vimrc
 
 New parameters found:   Yes
-Total income before optimization:   15972
-Total income after optimization:    16112
+Total income before optimization:   -5436
+Total income after optimization:    534
 Best parameters are:
-    'adaptiveFactor' = 1
-    'avgFactor1' = 0.038824708287165
-    'avgFactor' = 0.037525081989791
-    'avgFactor2' = 0.037309139191311
+    'avgFactor2' = 0.0015627133837916
+    'avgFactor' = 0.099908745205998
+    'avgFactor1' = 0.044909024855588
+    'threshold' = 0.01
+    'adaptiveFactor' = 40.3125
 ]]
 
 adaptive_ma = {
     etc = { -- master configuration
         asset = "RIZ5",
         class = "SPBFUT",
+        priceStep = 10,
 
-        avgFactor = 0.037525081989791,
-        adaptiveFactor= 2,
+        avgFactor = 0.099908745205998,
+        adaptiveFactor= 40.3125,
 
         -- tracking trend
-        avgFactor1 = 0.038824708287165,
-        avgFactor2 = 0.037309139191311,
+        avgFactor1 = 0.044909024855588,
+        avgFactor2 = 0.0015627133837916,
+
+        threshold = 0.01,
 
         -- wait for stat
         ignoreFirst = 10,
 
         paramsInfo = {
-            avgFactor = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
-            adaptiveFactor = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
-            avgFactor1 = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
-            avgFactor2 = { min=2.2204460492503131e-16, max=1, step=1, relative=true },
+            avgFactor = { min=2.3e-16, max=1, step=1, relative=true },
+            adaptiveFactor = { min=-100, max=1000, step=20, relative=false },
+            avgFactor1 = { min=2.3e-16, max=1, step=1, relative=true },
+            avgFactor2 = { min=2.3e-16, max=1, step=1, relative=true },
+            threshold = { min=0.0, max=1e32, step=0.1, relative=false}
 
         },
         schedule = {
@@ -53,7 +58,7 @@ adaptive_ma = {
         {name="lastPrice", title="Цена", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
         {name="avgPrice1", title="Средняя цена 1", ctype=QTABLE_DOUBLE_TYPE, width=17, format="%.0f" },
         {name="avgPrice2", title="Средняя цена 2",  ctype=QTABLE_DOUBLE_TYPE, width=17, format="%.0f" },
-        {name="charFunction", title="Тренд", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" },
+        {name="charFunction", title="Тренд", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.02f" },
     }
 }
 
@@ -78,6 +83,7 @@ function adaptive_ma.create(etc)
             avgPrice2 = 0,
             charFunction = 0,
             tradeCount = 0,
+            signal = 0,
         }
     }
     -- copy master configuration
@@ -142,6 +148,9 @@ function adaptive_ma.create(etc)
         state.tradeCount = state.tradeCount + 1
         local signal = 0
         if state.tradeCount > etc.ignoreFirst then
+            if charFunction*signal <= 0 and math.abs(charFunction) < self.etc.threshold then
+                charFunction = 0
+            end
             if charFunction > 0 then
                 signal = 1
             elseif charFunction < 0 then
@@ -150,6 +159,7 @@ function adaptive_ma.create(etc)
         end
 
         -- update UI state
+        state.signal = signal
         strategy.state = state
 
         -- check schedule

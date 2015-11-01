@@ -42,7 +42,7 @@ function runner.create(strategy, etc)
                 replyLog  = "logs/orders-replies[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
                 tradesLog = "logs/trade-events[" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
             },
-            account = "SPBFUT005Z5",
+            account = "SPBFUT005B2",
 
             limit = 0.3, -- 30% from money limit
 
@@ -146,6 +146,10 @@ function runner.create(strategy, etc)
         end
 
         if not self.tradingEnabled then
+            targetPos = 0
+        end
+
+        if self.position*targetPos < 0 then
             targetPos = 0
         end
     

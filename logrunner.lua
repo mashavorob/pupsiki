@@ -23,6 +23,10 @@ numericMin = 2.22507e-308
 numericMax = 1.79769e+308
 numericEpsilon = 2.22045e-16
 transactionCost = 6
+numSteps = 0
+maxAttempts = 10
+delay = 0.7
+
 
 local function usage(args)
     print(args[0] .. "<operation> <strategy> <log> [<log> [<log> ..]")
@@ -92,6 +96,7 @@ local function decodeTrade(trade)
         sec = tonumber(sec), 
         ms = tonumber(ms)
     }
+    trade.tstamp = os.time(trade.datetime) + trade.datetime.ms/1000.
     trade.sec_code = trade.sec_code or trade.asset
     trade.class_code = trade.class_code or trade.class
     trade.qty = tonumber(trade.qty or trade.quantity)
@@ -114,19 +119,30 @@ end
 local function runStrategy(sname, trades, etc)
     local pos, netPos = 0, 0, 0
     local strategy = loadStrategy(sname, etc)
-    local trade = trades[1]
     local dayDealCount, transactionCount = 0,0
+    local ntrades = #trades
 
     local function getDate(trade)
         local date = trade.datetime
         return string.format("%02d-%02d-%04d", date.day, date.month, date.year)
     end
 
-    io.stdout:write("processing " .. getDate(trade) .. " ... ")
+    io.stdout:write("processing " .. getDate(trades[1]) .. " ... ")
+    local day = trades[1].datetime.day
 
-    for i = 2,#trades do
-        local nextTrade = trades[i]
-        local price = nextTrade.price
+    for i = 2,ntrades do
+        local trade = trades[i]
+        local tstamp = trade.tstamp
+        local price = trade.price
+        
+        for j = i + 1,ntrades do
+            local t = trades[j]
+            price = t.price
+            if t.tstamp >= tstamp + delay then
+                break
+            end
+        end
+
         local newPos = strategy.onTrade(trade, trade.datetime)
         if newPos > 0 then
             newPos = 1
@@ -137,23 +153,33 @@ local function runStrategy(sname, trades, etc)
         end
 
         if newPos ~= pos then
+            local actualPrice = price
+            if newPos > pos then
+                actualPrice = price - numSteps*strategy.etc.priceStep
+            else
+                actualPrice = price + numSteps*strategy.etc.priceStep
+            end
             dayDealCount = dayDealCount + 1
             transactionCount = transactionCount + 1
-            netPos = netPos - (pos - newPos)*price
+            netPos = netPos - (pos - newPos)*actualPrice
             pos = newPos
         end
 
-        if nextTrade.datetime.day ~= trade.datetime.day then
+        if day ~= trade.datetime.day then
             print("OK transactions: " .. dayDealCount .. " postion at EOD: " .. (netPos - dayDealCount*transactionCost))
-            io.stdout:write("processing " .. getDate(nextTrade) .. " ... ")
+            io.stdout:write("processing " .. getDate(trade) .. " ... ")
             dayDealCount = 0
         end
-        trade = nextTrade
+        day = trade.datetime.day
         pos = newPos
     end
-    netPos = netPos + pos*trade.price
+    netPos = netPos + pos*trades[ntrades].price
+    netPos = netPos - transactionCost*transactionCount
+    if transactionCount == 0 then
+        netPos = -1e12 -- penalty
+    end
     print("OK transactions: " .. dayDealCount .. " postion at EOD: " .. netPos)
-    return netPos - transactionCost*transactionCount
+    return netPos
 end
 
 -- creates a 'shallow' copy of specified table
@@ -167,7 +193,7 @@ end
     
 local function optimizeParam(sname, etc, trades, cincome, pname)
 
-    local attempt, maxAttempts = 0, 10
+    local attempt = 0
     local factor = 1
     local direction = 1
 
@@ -211,7 +237,7 @@ local function optimizeParam(sname, etc, trades, cincome, pname)
             direction = direction*(-1)
         end
         if not found then
-            factor = factor/2
+            factor = factor*0.5
             attempt = attempt + 1
             print("Reducing shift, attempt " .. attempt .. " of " .. maxAttempts)
         end
