@@ -1,5 +1,4 @@
 --[[
-#
 # Простейшая стратегия основанная на скользящих средних
 # с парраболической адаптацией
 #
@@ -22,10 +21,15 @@ Best parameters are:
     'adaptiveFactor' = 40.3125
 ]]
 
+require("qlib/quik-etc")
+
 adaptive_ma = {
     etc = { -- master configuration
         asset = "RIZ5",
         class = "SPBFUT",
+        title = "adaptive-ma",
+        confFolder = "conf",
+
         priceStep = 10,
 
         avgFactor = 0.099908745205998,
@@ -64,19 +68,12 @@ adaptive_ma = {
 
 function adaptive_ma.create(etc)
 
-    local function copyValues(src, dst, master)
-        for k, v in pairs(master) do
-            local v1 = src[k] 
-            if v1 then
-                dst[k] = v1
-            end
-        end
-    end
-
     local self = {
-        etc = { },
+        etc = config.create(adaptive_ma.etc),
 
         state = {
+            asset = "",
+            class = "",
             lastPrice = false,
             meanPrice = 0,
             avgPrice1 = 0,
@@ -86,28 +83,20 @@ function adaptive_ma.create(etc)
             signal = 0,
         }
     }
-    -- copy master configuration
-    copyValues(adaptive_ma.etc, self.etc, adaptive_ma.etc)
-    -- overwrite parameters
-    if etc then
-        copyValues(etc, self.etc, self.etc)
+
+    self.etc:load()
+    if ( etc ) then
+        self.etc:merge(etc)
     end
 
     local strategy = {
-        title = "adaptive--[" .. self.etc.class .. "-" .. self.etc.asset .. "]",
+        title = self.etc.title .. "-[" .. self.etc.class .. "-" .. self.etc.asset .. "]",
         ui_mapping = adaptive_ma.ui_mapping,
-        etc = { }, -- readonly
+        etc = self.etc,
         state = self.state,
     }
     self.state.asset = self.etc.asset
 
-    copyValues(self.etc, strategy.etc, self.etc)
-
-    -- the main function: accepts trade market data flow  on input 
-    -- returns target position:
-    --   0 - do not hold
-    --   1 - long
-    --  -1 - short
     function strategy.onTrade(trade, datetime)
         -- filter out alien trades
         local etc = self.etc

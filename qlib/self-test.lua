@@ -14,9 +14,11 @@
 ]]
 
 require("quik-logger")
+require("quik-etc")
 
 local unitTests = {
-    csvlog = csvlog.getTestSuite()
+    csvlog = csvlog.getTestSuite(),
+    config = config.getTestSuite()
 }
 
 local failed = { }
