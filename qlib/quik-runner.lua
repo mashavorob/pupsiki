@@ -13,6 +13,8 @@
 
 runner = {}
 
+require("qlib/quik-etc")
+
 function runner.create(strategy, etc)
     require("qlib/quik-logger")
     require("qlib/quik-table")
@@ -34,7 +36,7 @@ function runner.create(strategy, etc)
 
     local self = {
         strategy = strategy,
-        etc = {
+        etc = config.create {
             asset = strategy.etc.asset,
             class = strategy.etc.class,
             logs = {
@@ -50,6 +52,7 @@ function runner.create(strategy, etc)
             depoBuy = 0,
             priceMin = 0,
             priceMax = 0,
+
         },
         logs = {
             ordersLog = false,
@@ -69,9 +72,13 @@ function runner.create(strategy, etc)
             target = "--",
             err = false,
         },
+        --
+        signal = false,
+        tstamp = false,
     }
+
     etc = etc or { }
-    etc, self.etc = self.etc, etc -- swap
+    self.etc:merge(etc)
 
     setmetatable( self.etc, { __index = etc } )
 
@@ -95,7 +102,7 @@ function runner.create(strategy, etc)
         replyLog = {"date-time", "unix-time", "trans_id", "status", "time", "uid",
             "flags", "server_trans_id", "order_num", "price", "quantity", "balance", "account", 
             "class_code", "sec_code"},
-        tradesLog = {"date-time", "unix-time",
+        tradesLog = {"date-time", "unix-time", "event-tstamp", "delay",
             "trade_num", "order_num", "account", "price", "qty", "value", "accruedint", "yield", "settlecode",
             "flags", "price2", "block_securities", "block_securities", "exchange_comission", 
             "tech_center_comission", "sec_code", "class_code"},
@@ -268,7 +275,12 @@ function runner.create(strategy, etc)
         elseif signal < 0 then
             signal = -1
         end
-        self.target = getMaxPos(signal)
+        signal = getMaxPos(signal)
+        if signal ~= self.signal then
+            self.signal = signal
+            self.tstamp = os.time(trade.datetime) + trade.datetime.ms/1000.0
+        end
+        self.target = signal
         executePos()
     end
 
@@ -279,6 +291,11 @@ function runner.create(strategy, etc)
 
     function r.onTrade(trade)
         enrichRecord(trade)
+        
+        if self.tstamp then
+            trade["event-tstamp"] = self.tstamp
+            trade.delay = os.time(trade.datetime) + trade.datetime.ms/1000 - self.tstamp
+        end
         self.logs.tradesLog.write(trade)
     end
 

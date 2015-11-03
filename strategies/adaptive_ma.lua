@@ -47,8 +47,8 @@ adaptive_ma = {
         paramsInfo = {
             avgFactor = { min=2.3e-16, max=1, step=1, relative=true },
             adaptiveFactor = { min=-100, max=1000, step=20, relative=false },
-            avgFactor1 = { min=2.3e-16, max=1, step=1, relative=true },
-            avgFactor2 = { min=2.3e-16, max=1, step=1, relative=true },
+            avgFactor1 = { min=0, max=1, step=1, relative=true },
+            avgFactor2 = { min=0, max=1, step=1, relative=true },
             threshold = { min=0.0, max=1e32, step=0.1, relative=false}
 
         },
@@ -90,7 +90,7 @@ function adaptive_ma.create(etc)
     end
 
     local strategy = {
-        title = self.etc.title .. "-[" .. self.etc.class .. "-" .. self.etc.asset .. "]",
+        title = self.etc:getTitle(),
         ui_mapping = adaptive_ma.ui_mapping,
         etc = self.etc,
         state = self.state,

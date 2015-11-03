@@ -1,10 +1,8 @@
 #!/usr/bin/lua 
-
+-- vi: ft=lua:fenc=cp1251 
 --[[
 #
 # Тестировщик стратегий
-#
-# vi: ft=lua:fenc=cp1251 
 #
 # Если Вы можете прочитать эту строку то все нормально
 # If you cannot read the line above you editor use wrong encoding
@@ -23,9 +21,9 @@ numericMin = 2.22507e-308
 numericMax = 1.79769e+308
 numericEpsilon = 2.22045e-16
 transactionCost = 6
-numSteps = 0
+numSteps = 2
 maxAttempts = 10
-delay = 0.7
+delay = 0.3
 
 
 local function usage(args)
@@ -287,6 +285,15 @@ end
 local function OptimizeParams(sname, trades, etc)
     local income, incomeAtStart = false, false
 
+    print("Unshifted parameters:")
+
+    local etc0 = loadStrategy(sname, etc).etc
+    for pname,_ in pairs(etc.paramsInfo) do
+        print("", "'" .. pname .. "' = " .. etc0[pname])
+    end
+
+    print("")
+
     income, etc, incomeAtStart = doDescent(sname, trades, etc)
 
     print("")
@@ -298,18 +305,20 @@ local function OptimizeParams(sname, trades, etc)
     for pname,_ in pairs(etc.paramsInfo) do
         print("", "'" .. pname .. "' = " .. etc[pname])
     end
-    print("")
-    io.stdout:write("Saving parameters ... ")
-    if loadStrategy(sname, etc).etc:save() then
-        print("OK")
-    else
-        print("failed")
+    if income > incomeAtStart then
+        print("")
+        io.stdout:write("Saving parameters ... ")
+        if loadStrategy(sname, etc).etc:save() then
+            print("OK")
+        else
+            print("failed")
+        end
     end
 end
 
 local function KickOff(sname, logs, operation)
-    local trades = loadAllLogs(logs)
     local strategy = loadStrategy(sname)
+    local trades = loadAllLogs(logs)
     local etc = makeCopy(strategy.etc)
     strategy = nil
     operation(sname, trades, etc)

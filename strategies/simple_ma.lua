@@ -25,10 +25,10 @@ simple_ma = {
     etc = { -- master configuration
         asset = "RIZ5",
         class = "SPBFUT",
-        title = "adaptive-ma",
+        title = "simple-ma",
         confFolder = "conf",
 
-        priceStep= 10,
+        priceStep = 10,
 
         -- tracking trend
         avgFactor1 = 0.39088183765051,
@@ -70,7 +70,7 @@ function simple_ma.create(etc)
     }
 
     local strategy = {
-        title = "simple-ma-[" .. self.etc.class .. "-" .. self.etc.asset .. "]",
+        title = self.etc:getTitle(),
         ui_mapping = simple_ma.ui_mapping,
         etc = self.etc,
         state = {
