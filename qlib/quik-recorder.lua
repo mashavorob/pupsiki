@@ -13,12 +13,11 @@
 
 recorder = {}
 
-function recorder.create(etc)
+function recorder.create()
     require("qlib/quik-logger")
     require("qlib/quik-table")
 
     local self = {
-        strategy = strategy,
         etc = {
             logs = {
                 allTradesLog = "logs/all-trade-events-%Y-%m-%d.log",
@@ -27,7 +26,6 @@ function recorder.create(etc)
         logs = {
             allTradesLog = false,
         },
-        day = false,
         ui_mapping = { 
             {name="state", title="Cостояние", ctype=QTABLE_STRING_TYPE, width=14, format="%s" },
         },
@@ -36,11 +34,9 @@ function recorder.create(etc)
         },
         qtable = false,
     }
-    etc = etc or { }
-    etc, self.etc = self.etc, etc -- swap
-    setmetatable( self.etc, { __index = etc } )
 
-    self.qtable = qtable.create("quik-recorder.wpos", "Рекордер", self.ui_mapping)
+    self.qtable = qtable.create("conf/quik-recorder.wpos", "Рекордер", self.ui_mapping)
+    self.qtable.addRow(self.state)
 
     local function dateTimeAsStr(unixTime, ms)
         ms = ms and string.format(".%03d", ms) or ""
@@ -76,26 +72,9 @@ function recorder.create(etc)
 
     local r = { }
 
-    local lastHash = ""
-
-    local function logStatus()
-        local state = {}
-        local hash = ""
-        for _, k in ipairs(self.ui_mapping) do
-            local v = self.state[k.name] or self.strategy.state[k.name] or "--"
-            state[k.name] = v
-            hash = hash .. "[" .. k.name .. "=" .. v .. "]"
-        end
-        if hash ~= lastHash  then
-            self.qtable.addRow(state)
-            lastHash = hash
-        end
-    end
-
     function r.onIdle()
         self.qtable.onIdle()
         checkLogs()
-        logStatus()
     end
 
     function r.onAllTrade(trade)

@@ -15,10 +15,12 @@
 
 require("quik-logger")
 require("quik-etc")
+require("quik-avd")
 
 local unitTests = {
     csvlog = csvlog.getTestSuite(),
-    config = config.getTestSuite()
+    config = config.getTestSuite(),
+    avd = avd.getTestSuite(),
 }
 
 local failed = { }
@@ -27,11 +29,15 @@ for uname,units in pairs(unitTests) do
     for tname, test in pairs(units) do
         io.write(string.format("%s.%s - ", uname, tname))
         io.flush()
-        if pcall( test ) then
-        --if test() then
+        local prn = _G.print
+        _G.print = function() end
+        local res = pcall( test )
+        _G.print = prn
+        if res then
             io.write("OK\n")
         else
             io.write("Failed\n")
+            -- test()
             table.insert(failed, uname .. "." .. tname)
         end
         io.flush()

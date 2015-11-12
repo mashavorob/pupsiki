@@ -14,7 +14,6 @@
 local mdRecorder = false
 
 local etc = {
-    asset="RIZ5",
     sname = "adaptive_ma",
 }
 

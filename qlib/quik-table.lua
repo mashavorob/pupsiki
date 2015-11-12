@@ -92,8 +92,10 @@ function qtable.create(posfile, title, cols)
     local f_cfg = io.open(self.cfgFile, 'r')
     if f_cfg then
         local ln = f_cfg:read("*line")
-        local fn = loadstring("SetWindowPos(" .. self.id .. "," .. ln .. ")")
-        pcall(fn)
+        if ln then
+            local fn = loadstring("SetWindowPos(" .. self.id .. "," .. ln .. ")")
+            pcall(fn)
+        end
         f_cfg:close()
     end
 
@@ -132,7 +134,7 @@ function qtable.create(posfile, title, cols)
         local top, left, bottom, right = GetWindowRect(self.id)
         local x, y, dx, dy = left, top, right - left, bottom - top
         local ln = x .. "," .. y .. "," .. dx .. "," .. dy 
-        
+
         if ln ~= self.posCache then
             local f_cfg = io.open(self.cfgFile, "w+")
             if f_cfg then

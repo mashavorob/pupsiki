@@ -21,32 +21,53 @@ Best parameters are:
 
 config = {}
 
+local keywords = { folder=true, title=true, params=true, class=true, asset=true }
+local types = { string=true, number=true }
+
 function config.create(etc)
     local conf = { }
     setmetatable(etc, { __index = conf } )
 
+    function conf:getParams()
+        if type(self.params) == "table" then
+            return self.params
+        end
+
+        local params = {}
+
+        for k,v in pairs(self) do
+            if type(k) == "string" and 
+               string.match(k, "[a-zA-Z_][a-zA-Z0-9_]*") and 
+               not keywords[k] and
+               types[type(v)] 
+            then
+                table.insert(params, {name=k})
+            end
+        end
+        return params
+    end
     function conf:merge(other)
-        for k,_ in pairs(self) do
-            local v = other[k]
-            if v then
-                self[k] = v
+        local params = self:getParams()
+        for _,param in ipairs(params) do
+            local v = other[param.name]
+            if v ~= nil then
+                self[param.name] = v
             end
         end
     end
-
     function conf:getTitle()
         assert(type(self.title) == "string")
         assert(type(self.asset) == "string")
         assert(type(self.class) == "string")
-
         return self.title .. "-[" .. self.class .. "-" .. self.asset .. "]"
     end
-
     function conf:getFileName()
-        assert(type(self.confFolder) == "string")
-        return self.confFolder .. "/" .. self:getTitle() .. ".conf"
+        local fname = self:getTitle() .. ".conf"
+        if type(self.folder) == "string" then
+            fname = self.folder .. "/" .. fname
+        end
+        return fname 
     end
-
     function conf:load()
         local fname = self:getFileName()
         local f_conf = io.open(fname, "r")
@@ -76,14 +97,14 @@ function config.create(etc)
 
     function conf:save()
         local code = ""
+        local params = self:getParams()
 
-        for k,v in pairs(self) do
-            if type(k) == "string" then 
-                if type(v) == "string" then
-                    code = code .. k .. " = '" .. v .. "',\n"
-                elseif type(v) == "number" then
-                    code = code .. k .. ' = ' .. v .. ",\n"
-                end
+        for _,param in ipairs(params) do
+            local v = self[param.name]
+            if type(v) == "string" then
+                code = code .. param.name .. " = '" .. v .. "',\n"
+            elseif type(v) == "number" then
+                code = code .. param.name .. ' = ' .. v .. ",\n"
             end
         end
 
@@ -108,6 +129,7 @@ function config.getTestSuite()
         assert(etc.merge ~= nil)
         assert(etc.load ~= nil)
         assert(etc.save ~= nil)
+        assert(etc.getParams ~= nil)
     end
     function testSuite.merge()
         local template = { a = 1, b = 2 }
@@ -118,17 +140,62 @@ function config.getTestSuite()
         assert(etc.a == "b")
         assert(etc.b == 2)
     end
+    function testSuite.mergeKeywords()
+        local etc = config.create( { title = "title", asset = "asset", class = "class", params = "params", folder = "folder" } )
+        assert(#etc == #keywords)
+        etc:merge({title = 1, asset = 1, class = 1, params = 1, folder = 1})
+        assert(etc.title == "title")
+        assert(etc.asset == "asset")
+        assert(etc.class == "class")
+        assert(etc.params == "params")
+        assert(etc.folder == "folder")
+    end
+    function testSuite.mergeParams()
+        local etc = config.create( { a = 1
+                                   , p = 2
+                                   , params = { 
+                                        { name = "p" }, 
+                                     } 
+                                   } )
+        etc:merge( { a = 3, p = 4 } )
+        assert(etc.a == 1)
+        assert(etc.p == 4)
+    end
+    function testSuite.mergeArbitraryKeys()
+        local function mktable(k, v, t)
+            t = t or {}
+            t[k] = v
+            return t
+        end
+        local etc = config.create( mktable("123", 2, { a = "b"}) )
+        etc:merge( mktable("123", 4, { a = 3 }) )
+        assert(etc.a == 3)
+        assert(etc["123"] == 2)
+    end
+    function testSuite.mergeMismatchedKeys()
+        local etc = config.create( { a = 1 } )
+        etc:merge( { b = 2 } )
+        assert(etc.a == 1)
+        assert(etc.b == nil)
+    end
     function testSuite.title()
         local etc = config.create({asset="asset", class="class", title="title"})
         assert(etc:getTitle() == "title-[class-asset]")
     end
+    function testSuite.getFileNameInFolder()
+        local etc = config.create({asset="asset", class="class", title="title", folder="etc"}) 
+        assert(etc:getFileName() == "etc/title-[class-asset].conf")
+    end
     function testSuite.getFileName()
-        local etc = config.create({asset="asset", class="class", title="title", confFolder="conf"}) 
-        assert(etc:getFileName() == "conf/title-[class-asset].conf")
+        local etc = config.create({asset="asset", class="class", title="title"}) 
+        assert(etc:getFileName() == "title-[class-asset].conf")
     end
     function testSuite.load()
-        os.execute("mkdir conf")
-        local etc = config.create({asset="asset", class="class", title="title", confFolder="conf", a=0, b=0}) 
+        local etc = config.create({asset="asset", class="class", title="title", folder=os.tmpname() .. "_folder", a=0, b=0})
+       
+        os.execute("rm -r " .. etc.folder .. " 2>/dev/null")
+        os.execute("mkdir " .. etc.folder .. " 2>/dev/null")
+
         local fname = etc:getFileName()
         local f_out = io.open(fname, "w+")
         f_out:write("a=1, b='b'")
@@ -148,12 +215,15 @@ function config.getTestSuite()
         assert(not etc:load())
     end
     function testSuite.save()
-        os.execute("mkdir conf")
 
-        local etc = config.create({asset="asset", class="class", title="title", confFolder="conf", a=1, b="b"}) 
+        local etc = config.create({asset="asset", class="class", title="title", folder=os.tmpname() .. "_folder", a=1, b="b"}) 
+        
+        os.execute("rm -r " .. etc.folder .. " 2>/dev/null")
+        os.execute("mkdir " .. etc.folder .. " 2>/dev/null")
+
         assert(etc:save())
 
-        etc = config.create({asset="asset", class="class", title="title", confFolder="conf", a = 0, b = 0}) 
+        etc = config.create({asset="asset", class="class", title="title", folder=etc.folder, a = 0, b = 0}) 
         assert(etc.a == 0)
         assert(etc.b == 0)
 
