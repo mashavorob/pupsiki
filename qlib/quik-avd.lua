@@ -9,14 +9,6 @@
 # The correct encoding is CP1251. In VIm you may use command:
 #   :e ++enc=cp1251
 # or enable modeline in your .vimrc
-
-New parameters found:   Yes
-Total income before optimization:   31012
-Total income after optimization:    74128
-Best parameters are:
-    'avgFactor1' = 0.39088183765051
-    'avgFactor2' = 0.15874429247025
-
 ]]
 
 avd = {}
