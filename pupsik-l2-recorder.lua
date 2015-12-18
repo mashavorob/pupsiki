@@ -113,16 +113,24 @@ function OnInit(scriptPath)
     end
 
     local function rfind(s, subs)
-        local npos = string.find(s, subs, 1, true)
+        local pos = string.find(s, subs, 1, true)
         local nextPos = pos
         while nextPos do
-            npos = nextPos
-            nextPos = string.find(s, subs, npos + 1, true)
+            pos = nextPos
+            nextPos = string.find(s, subs, pos + 1, true)
         end
+        return pos
     end
-    local npos = rfind(scriptPath, "\\") or rfind(scriptPath, "//")
-    local folder = npos and string.sub(srciptPath, 1, npos - 1) or scriptPath
-    LUA_PATH = LUA_PATH .. ".\\?.lua;" .. folder .. "\\?.lua"
+    local pos = rfind(scriptPath, "\\") or rfind(scriptPath, "//")
+    local folder = pos and string.sub(scriptPath, 1, pos) or scriptPath
+
+    if LUA_PATH and LUA_PATH ~= "" then
+        LUA_PATH = LUA_PATH .. ";"
+    end
+    LUA_PATH = LUA_PATH .. ".\\?.lua;" .. folder .. "?.lua"
+
+    assert(require("qlib/quik-fname"))
+    q_fname.root = folder
 
     recorder = l2r.create()
     recorder:onInit()

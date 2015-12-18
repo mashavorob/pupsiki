@@ -31,8 +31,24 @@ csvlog = {}
         }
 ]]
 
+require("qlib/quik-fname")
+
 function csvlog.create(fname, columns)
-    fname = os.date(fname)
+    fname = q_fname.normalize(os.date(fname))
+
+    local unixRoot = string.find(fname, '/', 1, true)
+    if unixRoot then
+        unixRoot = unixRoot == 1
+    end
+    local windowsRoot = string.find(fname, ':', 1, true)
+    if windowsRoot then
+        windowsRoot = windowsRoot == 2
+    end
+    if scriptFolder and not unixRoot and not windowsRoot  then
+        fname = scriptFolder .. fname
+    end
+
+
     local self = { 
         columns = columns,
         fname = fname,

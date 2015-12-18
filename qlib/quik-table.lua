@@ -58,7 +58,11 @@
 
 qtable = {}
 
+require("qlib/quik-fname")
+
 function qtable.create(posfile, title, cols)
+
+    posfile = q_fname.normalize(posfile)
 
     local function Dummy() end
     self = { 

@@ -1,6 +1,6 @@
 --[[
 #
-# Стратегия скальпер для Quik [RIZ5]
+# Стратегия скальпер для Quik [RIxx]
 #
 # vi: ft=lua:fenc=cp1251 
 #
@@ -12,10 +12,15 @@
 ]]
 
 local etc = {
-    account = "SPBFUT005B2",
-    asset="RIZ5",
+    account = "SPBFUT005eC",
+    firmid =  "SPBFUT589000",
     sname = "quik-scalper",
+
+    asset = 'RIH6',
+    class = "SPBFUT",
 }
+
+scriptFolder = nil
 
 function OnInit(scriptPath)
 
@@ -37,10 +42,14 @@ function OnInit(scriptPath)
     end
     local pos = rfind(scriptPath, "\\") or rfind(scriptPath, "//")
     local folder = pos and string.sub(scriptPath, 1, pos) or scriptPath
+
     if LUA_PATH and LUA_PATH ~= "" then
         LUA_PATH = LUA_PATH .. ";"
     end
     LUA_PATH = LUA_PATH .. ".\\?.lua;" .. folder .. "?.lua"
+
+    assert(require("qlib/quik-fname"))
+    q_fname.root = folder
 
     assert(require("qlib/quik-l2-runner"))
     assert(require("qlib/" .. etc.sname))
@@ -48,9 +57,8 @@ function OnInit(scriptPath)
     local factory = assert(_G[etc.sname])
     local strategy = assert(factory.create(etc))
 
-    strategyRunner = assert(runner.create(strategy, etc))
+    strategyRunner = assert(q_runner.create(strategy, etc))
 end
-
 
 function OnAllTrade(trade)
     strategyRunner:onAllTrade(trade)

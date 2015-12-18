@@ -5,15 +5,17 @@
 # vi: ft=lua:fenc=cp1251 
 #
 # Если Вы можете прочитать эту строку то все нормально
-# If you cannot runner:ad the line above you editor use wrong encoding
+# If you cannot q_runner:ad the line above you editor use wrong encoding
 # The correct encoding is CP1251. In VIm you may use command:
 #   :e ++enc=cp1251
 # or enable modeline in your .vimrc
 ]]
 
 require("qlib/quik-etc")
+require("qlib/quik-logger")
+require("qlib/quik-table")
 
-runner = {
+q_runner = {
     strategy = false,
     etc = config.create {
         asset = "RIZ5",
@@ -22,6 +24,7 @@ runner = {
             -- ordersLog = "logs/orders[L2-SPBFUT-RIZ5]-2015-11-11.log",
             -- replyLog  = "logs/orders-replies[L2-SPBFUT-RIZ5]-2015-11-11.log",
             -- tradesLog = "logs/trade-events[L2-SPBFUT-RIZ5]-2015-11-11.log" ,
+            -- allTradesLog = "logs/all-trade-events[L2-SPBFUT-RIZ5]-2015-11-11.log" ,
         },
         account = "SPBFUT005B2",
     },
@@ -29,25 +32,24 @@ runner = {
         ordersLog = false,
         replyLog = false,
         tradesLog = false,
+        allTradesLog = false,
     },
     day = false,
     qtable = false,
 }
 
-function runner.create(strategy, etc)
-    require("qlib/quik-logger")
-    require("qlib/quik-table")
-
+function q_runner.create(strategy, etc)
     local self ={ }
-    setmetatable(self, {__index = runner})
+    setmetatable(self, {__index = q_runner})
 
     self.strategy = strategy
-    self.etc = config.create( runner.etc )
+    self.etc = config.create( q_runner.etc )
     self.qtable = qtable.create(strategy.title .. ".wpos", strategy.title, strategy.ui_mapping)
     self.etc.logs = {
         ordersLog = "logs/orders[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
         replyLog  = "logs/orders-replies[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
         tradesLog = "logs/trade-events[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
+        allTradesLog = "logs/all-trade-events[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
     }
 
     etc = etc or { }
@@ -91,10 +93,13 @@ local logColumns = {
         "trade_num", "order_num", "account", "price", "qty", "value", "accruedint", "yield", "settlecode",
         "flags", "price2", "block_securities", "block_securities", "exchange_comission", 
         "tech_center_comission", "sec_code", "class_code"},
+    allTradesLog = {"date-time", "unix-time",
+        "trade_num", "flags", "price", "qty", "value", "accruedint", "yield", "settlecode", 
+        "sec_code", "class_code"},
 }
 
 
-function runner:checkLogs()
+function q_runner:checkLogs()
     for log, fname in pairs(self.etc.logs) do
         fname = os.date(fname)
         if not self.logs[log] or fname ~= self.logs[log].getFileName() then
@@ -109,7 +114,7 @@ end
 
 local lastHash = ""
 
-function runner:logStatus()
+function q_runner:logStatus()
     local state = {}
     local hash = ""
     for _, k in ipairs(self.strategy.ui_mapping) do
@@ -123,23 +128,27 @@ function runner:logStatus()
     end
 end
 
-function runner:onIdle()
+function q_runner:onIdle()
     self.qtable.onIdle()
     self:checkLogs()
-    
+    self:logStatus()
+    self.strategy:onIdle()
+end
+
+function q_runner:onAllTrade(trade)
+    enrichRecord(trade)
+    self.strategy:onAllTrade(trade)
+    self.logs.allTradesLog.write(trade)
     self:logStatus()
 end
 
-function runner:onAllTrade(trade)
-end
-
-function runner:onTransReply(reply)
+function q_runner:onTransReply(reply)
     enrichRecord(reply)
     self.strategy:onTransReply(reply)
     self.logs.replyLog.write(reply)
 end
 
-function runner:onTrade(trade)
+function q_runner:onTrade(trade)
     enrichRecord(trade)
     self.strategy:onTrade(trade)
     
@@ -150,15 +159,20 @@ function runner:onTrade(trade)
     self.logs.tradesLog.write(trade)
 end
 
-function runner:onQuote(class, asset)
+function q_runner:onQuote(class, asset)
     self.strategy:onQuote(class, asset)
+    self:logStatus()
 end
 
-function runner:isClosed()
+function q_runner:onDisconnected()
+    self.strategy:onDisconnected()
+end
+
+function q_runner:isClosed()
     return self.qtable.isClosed()
 end
 
-function runner:onClose()
+function q_runner:onClose()
     for _, log in pairs(self.logs) do
         if log then 
             log.close()
