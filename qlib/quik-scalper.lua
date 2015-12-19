@@ -38,7 +38,7 @@ local q_scalper = {
         avgFactor = 50,
         avgFactor2 = 1000,
         confBand = 1,
-        maxLoss = 20,
+        maxLoss = 10,
         maxDeviation = 2,
         nearFuture = 10, -- forecast for 3 ticks
         farFuture = 200, -- forecast for 50 ticks
@@ -444,16 +444,17 @@ function strategy:onQuoteOrTrade(l2)
     end
 
     if state.order:isActive() then
-        local minPrice = state.bid.order.price - etc.maxDeviation*etc.priceStepSize
-        if state.bid.price <= minPrice then
+        local maxDiff = etc.maxDeviation*etc.priceStepSize
+        if math.abs((state.bid.price + state.offer.price)/2 - state.order.price) > maxDiff then
             ui_state.state = "Ликвидация: изменение цены"
             if state.position ~= 0 then
                 state.tickCount = self:getMinTickCount()*3/4
             end
+            state.order:kill()
             self:killPosition()
         else
-            ui_state.state = "Отмена при цене ниже:" .. string.format("%.0f", minPrice)
-            ui_state.state = ui_state.state .. " (" .. string.format("%.0f", state.offer.price) .. ")"
+            ui_state.state = "Отмена при отклонении цены на:" .. string.format("%.0f", maxDiff)
+            ui_state.state = ui_state.state .. " от " .. string.format("%.0f", state.order.price)
         end
         return
     end

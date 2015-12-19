@@ -12,8 +12,8 @@
 ]]
 
 local etc = {
-    account = "SPBFUT005eC",
-    firmid =  "SPBFUT589000",
+    account = "==SPBFUT005eC",
+    firmid =  "==SPBFUT589000",
     sname = "quik-scalper",
 
     asset = 'RIH6',
@@ -49,11 +49,16 @@ function OnInit(scriptPath)
     LUA_PATH = LUA_PATH .. ".\\?.lua;" .. folder .. "?.lua"
 
     assert(require("qlib/quik-fname"))
+    assert(require("qlib/quik-utils"))
     q_fname.root = folder
 
     assert(require("qlib/quik-l2-runner"))
     assert(require("qlib/" .. etc.sname))
 
+    etc.account = q_utils.getAccount() or self.etc.account
+    etc.firmid = q_utils.getFirmID() or self.etc.firmid
+
+    message("account = " .. etc.account .. "\nfirmid = " .. etc.firmid, 1)
     local factory = assert(_G[etc.sname])
     local strategy = assert(factory.create(etc))
 
