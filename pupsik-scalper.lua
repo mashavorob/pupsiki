@@ -55,8 +55,8 @@ function OnInit(scriptPath)
     assert(require("qlib/quik-l2-runner"))
     assert(require("qlib/" .. etc.sname))
 
-    etc.account = q_utils.getAccount() or self.etc.account
-    etc.firmid = q_utils.getFirmID() or self.etc.firmid
+    etc.account = q_utils.getAccount() or etc.account
+    etc.firmid = q_utils.getFirmID() or etc.firmid
 
     message("account = " .. etc.account .. "\nfirmid = " .. etc.firmid, 1)
     local factory = assert(_G[etc.sname])
