@@ -58,7 +58,6 @@ function OnInit(scriptPath)
     etc.account = q_utils.getAccount() or etc.account
     etc.firmid = q_utils.getFirmID() or etc.firmid
 
-    message("account = " .. etc.account .. "\nfirmid = " .. etc.firmid, 1)
     local factory = assert(_G[etc.sname])
     local strategy = assert(factory.create(etc))
 

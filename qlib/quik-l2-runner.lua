@@ -14,6 +14,7 @@
 require("qlib/quik-etc")
 require("qlib/quik-logger")
 require("qlib/quik-table")
+require("qlib/quik-fname")
 
 q_runner = {
     strategy = false,
@@ -101,7 +102,7 @@ local logColumns = {
 
 function q_runner:checkLogs()
     for log, fname in pairs(self.etc.logs) do
-        fname = os.date(fname)
+        fname = q_fname.normalize(os.date(fname))
         if not self.logs[log] or fname ~= self.logs[log].getFileName() then
             local oldLog = self.logs[log]
             self.logs[log] = csvlog.create(fname, logColumns[log])
