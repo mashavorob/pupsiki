@@ -14,9 +14,15 @@
 q_avg = { }
 
 local avg = {
-    m = false,
-    m2 = 0,
-    average = 0,
+    average = false,
+    dispersion = 0,
+    deviation = 0,
+    alpha = 0,
+}
+
+local avgEx = {
+    average = { },
+    dispersion = 0,
     deviation = 0,
     alpha = 0,
 }
@@ -36,12 +42,52 @@ function q_avg.create(factor)
 end
 
 function avg:onValue(val)
-    self.m = self.m or val
-    self.m = self.m + self.alpha*(val - self.m)
-    local d = math.pow(self.m - val, 2)
-    self.m2 = self.m2 + self.alpha*(d - self.m2)
-    --self.deviation = self.deviation + self.alpha*(math.abs(val - self.m) - self.deviation)
-    self.average = self.m
-    self.deviation = math.pow(self.m2, 0.5)
+    self.average = self.average or val
+    self.average = self.average + self.alpha*(val - self.average)
+    local d = math.pow(self.average - val, 2)
+    self.dispersion = self.dispersion + self.alpha*(d - self.dispersion)
+    self.deviation = math.pow(self.dispersion, 0.5)
+end
+
+function q_avg.createEx(factor, n)
+    factor = factor or 19         -- alpha = 0.1
+    n = n or 2                    -- include the second deviation
+
+    local self = {
+        alpha = getAlpha(factor),
+        average = { },
+    }
+    for _ =1,n do
+        table.insert(self.average, 0)
+    end
+    setmetatable(self, { __index = avgEx })
+    return self
+end
+
+function avgEx:onValue(val)
+    self.average[0] = self.average[0] or val
+    self.average[0] = self.average[0] + self.alpha*(val - self.average[0])
+
+    local v = val
+    for i = 1,#self.average do
+        v  = (v - self.average[i - 1])*self.alpha
+        self.average[i] = self.average[i] + self.alpha*(v - self.average[i])
+    end
+
+    local d = math.pow(self:getAverage() - val, 2)
+    self.dispersion = self.dispersion + self.alpha*(d - self.dispersion)
+    self.deviation = math.pow(self.dispersion, 0.5)
+end
+
+function avgEx:getAverage(n)
+    n = n or 0
+    if n > #self.average then
+        return 0
+    end
+    return self.average[n] + self:getAverage(n + 1)/self.alpha
+end
+
+function avgEx:getTrend()
+    return self:getAverage(1)
 end
 

@@ -134,18 +134,25 @@ function order.getNextTransId()
 end
 
 function order:isPending()
-    return self.id and not self.key
+    return ((self.id and true) or false) and not self:isActive()
 end
 
 function order:isActive()
-    return self.key
+    return (self.key and true) or false
 end
 
 function order:kill()
-    assert(self.class and self.asset and self.id and self.key, "order has not been sent")
+    assert(self.class and self.asset and self.id and self.key, 
+        "order has not been sent\n" .. debug.traceback())
     if not self:isActive() then
         return true
     end
+    local now = os.time()
+    local lastKill = self.lastKill or 0
+    if now - lastKill < 5 then
+        return
+    end
+    self.lastKill = now
     local trans = {
         TRANS_ID=tostring(self.getNextTransId()),
         CLASSCODE=self.class,
@@ -161,13 +168,17 @@ function order:kill()
 end
 
 function order:send(operation, price, size)
-    assert(not self:isActive(), "The order is active")
+    assert(not self:isActive(), "The order is active\n" .. debug.traceback())
+    assert(not self:isPending(), "The order is pending\n" .. debug.traceback())
     
     self.id = self.getNextTransId()
+    self.key = nil
+    self.lastKill = nil
     self.operation = operation
     self.balance = size
     self.price = price
     self.size = size
+
     allOrders[self.id] = self
 
     local transaction = {
@@ -184,7 +195,7 @@ function order:send(operation, price, size)
     }
     local res = sendTransaction(transaction)
     if res == "" then
-        return true
+        return true, ""
     end
     allOrders[self.id] = nil
     self.id = nil
@@ -197,7 +208,9 @@ function order:onTransReply(reply)
     if reply.trans_id == 0 then
         return
     end
-    assert(reply.trans_id == self.id)
+    assert(reply.trans_id == self.id, "orders mismatch, expected " .. 
+        tostring(self.id) .. ", got " .. tostring(reply.trans_id) .. "\n" ..
+        debug.traceback())
   
     if not self.key then
         self.key = reply.order_num
