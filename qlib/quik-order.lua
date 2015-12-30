@@ -150,7 +150,7 @@ function order:kill()
     local now = os.time()
     local lastKill = self.lastKill or 0
     if now - lastKill < 5 then
-        return
+        return true
     end
     self.lastKill = now
     local trans = {

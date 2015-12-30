@@ -649,14 +649,14 @@ function strategy:onMarketShift(l2)
 
     local trend = state.fastTrend.average
     local offerVol, demandVol = self:calcOfferDemand(l2)
-    --[[if trend > 0 and offerVol/demandVol >= etc.maxImbalance then
+    if trend > 0 and offerVol/demandVol >= etc.maxImbalance then
         self.ui_state.state = "Неблагоприятный дисбаланс"
         return
     end
     if trend < 0 and demandVol/offerVol >= etc.maxImbalance then
         self.ui_state.state = "Неблагоприятный дисбаланс"
         return
-    end]]
+    end
 
     if trend > 0 then
         myBid = math.max(bid - etc.maxSpread, myBid)
