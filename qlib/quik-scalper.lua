@@ -182,8 +182,8 @@ function q_scalper.create(etc)
 
             order = { },
 
-            labelFactorySlow = q_label.createFactory("RI-Price", {r=180,g=180,b=0}, q_fname.normalize("qpict/slow.ico")),
-            labelFactoryFast = q_label.createFactory("RI-Price", {r=180,g=0,b=180}, q_fname.normalize("qpict/fast.ico")),
+            labelFactorySlow = q_label.createFactory("RI-Price", {r=180,g=180,b=0}, q_fname.normalize("qpict/slow.bmp")),
+            labelFactoryFast = q_label.createFactory("RI-Price", {r=180,g=0,b=180}, q_fname.normalize("qpict/fast.bmp")),
 
             labels = { },
             lastLabel = 0,
@@ -298,7 +298,7 @@ function strategy:init()
 
             self.state.slowPrice:onValue(price)
             self.state.slowTrend:onValue((price - self.state.slowPrice.average)*self.state.slowPrice.alpha)
-            
+
             self.state.lotSize:onValue(trade.qty)
 
             self:updateLabels(currTime)
@@ -340,7 +340,7 @@ function strategy:onAllTrade(trade)
     if trade.class_code ~= self.etc.class or trade.sec_code ~= self.etc.asset then
         return
     end
-    
+
     --[[self.state.fastPrice:onValue(trade.price)
     self.state.fastTrend:onValue((trade.price - self.state.fastPrice.average)*self.state.fastPrice.alpha)
 
@@ -396,7 +396,7 @@ function strategy:onIdle()
 
     if state.cancel then
         ui_state.control = "Ликвидация"
-        
+
         local active = state.order:isActive() or state.order:isPending()
 
         if state.phase ~= PHASE_CANCEL and state.order:isActive() then
@@ -530,7 +530,7 @@ end
 
 function strategy:calcMinBidMaxOffer(l2)
     l2 = l2 or self:getQuoteLevel2()
-    
+
     local maxVolume = self.state.lotSize.average*self.etc.maxAverageLots
 
     local demand = 0
@@ -593,7 +593,7 @@ function strategy:onMarketShift(l2)
     if spread < etc.minSpread then
         profit = 0
     end
-    
+
     if self.state.halt or self.state.cancel or self.state.pause then
         return
     end
@@ -619,7 +619,7 @@ function strategy:onMarketShift(l2)
         end
         return
     end
-    
+
     if state.position > 0 then
         local price = math.min(maxPrice, math.max(myOffer, state.order.price + etc.minSpread))
         if state.phase == PHASE_PRICE_CHANGE then
