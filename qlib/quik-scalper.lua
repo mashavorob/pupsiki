@@ -31,21 +31,24 @@ local q_scalper = {
         priceStepSize = 10,     -- granularity of price (minimum price shift)
         priceStepValue = 12,    -- price of price step (price of minimal price shift)
         minSpread = 1,          -- минимальный спрэд
+        maxSpread = 3,          -- максимальный спрэд
 
         -- Параметры задаваемые вручную
         absPositionLimit = 1,   -- максимальная приемлемая позиция (абсолютное ограничение)
         relPositionLimit = 0.3, -- максимальная приемлемая позиция по отношению к размеру счета
 
-        avgFactorFast = 50,     -- "быстрый" коэффициент осреднения
-        avgFactorSlow = 150,    -- "медленный" коэфициент осреднения
+        avgFactorFast = 70,     -- "быстрый" коэффициент осреднения
+        avgFactorSlow = 400,    -- "медленный" коэфициент осреднения
         avgFactorLot = 200,     -- коэффициент осреднения размера лота (сделки)
 
-        maxImbalance = 4,       -- максимально приемлимый дисбаланс стакана против тренда
+        maxImbalance = 5,       -- максимально приемлимый дисбаланс стакана против тренда
         maxAverageLots = 40,    -- ставить позиции не далее этого количества средних лотов
                                 -- от края стакана (средний размер сделки = средний лот)
+        forecast = 150,
 
         dealCost = 2,           -- биржевой сбор
         maxSpread = 1,          -- минимальный спрэд (для входа)
+        enterErrorThreshold = 1,-- предельная ошибка на входе (шагов цены)
 
         params = {
             { name="avgFactorFast", min=1, max=1e32, step=1, precision=1e-4 },
@@ -242,6 +245,7 @@ function strategy:updateParams()
         .. "\n" .. debug.traceback())
     self.etc.maxSpread = self.etc.maxSpread*self.etc.priceStepSize
     self.etc.minSpread = math.ceil(self.etc.dealCost*2/self.etc.priceStepValue)*self.etc.priceStepSize
+    self.etc.maxSpread = math.max(self.etc.minSpread, self.etc.maxSpread*self.etc.priceStepSize)
 end
 
 function strategy:init()
@@ -498,6 +502,14 @@ end
 
 function strategy:getQuoteLevel2()
     local l2 = getQuoteLevel2(self.etc.class, self.etc.asset)
+
+    if not l2.bid or not l2.offer then
+        l2.bid = { quantity = 0, price = self.etc.minPrice }
+        l2.offer = { quantity = 0, price = self.etc.maxPrice }
+        l2.bid_count = #l2.bid
+        l2.offer_count = #l2.offer
+    end
+
     l2.bid_count = tonumber(l2.bid_count)
     l2.offer_count = tonumber(l2.offer_count)
 
@@ -555,11 +567,61 @@ function strategy:calcMinBidMaxOffer(l2)
     return minBid, maxOffer
 end
 
+-- function returns operation, price
+function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
+
+    local etc = self.etc
+    local state = self.state
+    local trend = state.fastTrend.average
+    local offerVol, demandVol = self:calcOfferDemand(l2)
+    local bid = l2.bid[l2.bid_count].price
+    local offer = l2.offer[1].price
+
+    if trend > 0 and offerVol/demandVol >= etc.maxImbalance then
+        self.ui_state.state = "Неблагоприятный дисбаланс"
+        return
+    end
+    if trend < 0 and demandVol/offerVol >= etc.maxImbalance then
+        self.ui_state.state = "Неблагоприятный дисбаланс"
+        return
+    end
+
+    if trend > 0 then
+        local nearPrice = offer - etc.priceStepSize
+        local farPrice = math.floor((bid + trend*etc.forecast)/etc.priceStepSize)*etc.priceStepSize
+        farPrice = math.min(farPrice, maxPrice)
+        local spread = farPrice - nearPrice
+        local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2
+        self.ui_state.spread = string.format("%.0f / %.0f (%.0f)", nearPrice, farPrice, spread)
+        if (profit <= 0) or (spread < etc.minSpread) then
+            self.ui_state.state = "Мониторинг"
+            return
+        end
+        return 'B', nearPrice
+    elseif trend < 0 then
+        local nearPrice = bid + etc.priceStepSize
+        local farPrice = math.ceil((offer + trend*etc.forecast)/etc.priceStepSize)*etc.priceStepSize
+        farPrice = math.max(farPrice, minPrice)
+        local spread = nearPrice - farPrice
+        local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2
+        self.ui_state.spread = string.format("%.0f / %.0f (%.0f)", farPrice, nearPrice, spread)
+        if (profit <= 0) or (spread < etc.minSpread) then
+            self.ui_state.state = "Мониторинг"
+            return
+        end
+        return 'S', nearPrice
+    end
+end
+
 function strategy:onMarketShift(l2)
 
     local etc = self.etc
     local state = self.state
     l2 = l2 or self:getQuoteLevel2()
+
+    if #l2.bid <= 1 or #l2.offer <= 1 then
+        return
+    end
 
     local bid = l2.bid[l2.bid_count].price
     local offer = l2.offer[1].price
@@ -572,7 +634,7 @@ function strategy:onMarketShift(l2)
     local fastPrice = state.fastPrice.average + state.fastTrend.average/state.fastPrice.alpha
     local myOffer = fastPrice + state.fastPrice.deviation
     local myBid = fastPrice - state.fastPrice.deviation
-
+    
     maxPrice = math.floor(maxPrice/etc.priceStepSize)*etc.priceStepSize
     minPrice = math.ceil(minPrice/etc.priceStepSize)*etc.priceStepSize
 
@@ -586,13 +648,14 @@ function strategy:onMarketShift(l2)
     myOffer = math.min(myOffer, maxOffer)
     myBid = math.max(myBid, minBid)
 
-    self.ui_state.spread = string.format("%.0f / %.0f (%.0f)", myBid, myOffer, myOffer - myBid)
-
     local spread = myOffer - myBid
     local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2 
     if spread < etc.minSpread then
         profit = 0
     end
+
+    -- calculate enter price and operation
+    local enterOp, enterPrice = self:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
 
     if self.state.halt or self.state.cancel or self.state.pause then
         return
@@ -602,102 +665,76 @@ function strategy:onMarketShift(l2)
         self.ui_state.state = "Отправка заявки"
         return
     end
-    if state.order:isActive() then
-        local kill = false
-        if state.order.operation == 'B' and state.order.price < minPrice then
-            kill = true
-        elseif state.order.operation == 'S' and state.order.price > maxPrice then
-            kill = true
-        end
-        if kill then
-            self.ui_state.state = "Изменение цены"
-            local res, err = state.order:kill()
-            self:checkStatus(res, err)
-            state.phase = PHASE_PRICE_CHANGE
-        else
-            self.ui_state.state = "Ожидание исполнения заявки"
-        end
-        return
-    end
 
-    if state.position > 0 then
-        local price = math.min(maxPrice, math.max(myOffer, state.order.price + etc.minSpread))
-        if state.phase == PHASE_PRICE_CHANGE then
-            price = bid
-        end
-        state.phase = PHASE_CLOSE
-        self.ui_state.state = "Отправка заявки на закрытие"
-        local res, err = state.order:send('S', price, state.position)
-        self:checkStatus(res, err)
-        return
-    elseif state.position < 0 then
-        local price = math.max(minPrice, math.min(myBid, state.order.price - etc.minSpread))
-        if state.phase == PHASE_PRICE_CHANGE then
-            price = offer
-        end
-        state.phase = PHASE_CLOSE
-        self.ui_state.state = "Отправка заявки на закрытие"
-        local res, err = state.order:send('B', price, -state.position)
-        self:checkStatus(res, err)
-        return
-    end
-    state.phase = PHASE_WAIT
+    if state.position == 0 then
 
-    if not self:checkSchedule() then
-        return
-    end
-
-    local trend = state.fastTrend.average
-    local offerVol, demandVol = self:calcOfferDemand(l2)
-    if trend > 0 and offerVol/demandVol >= etc.maxImbalance then
-        self.ui_state.state = "Неблагоприятный дисбаланс"
-        return
-    end
-    if trend < 0 and demandVol/offerVol >= etc.maxImbalance then
-        self.ui_state.state = "Неблагоприятный дисбаланс"
-        return
-    end
-
-    if trend > 0 then
-        myBid = math.max(bid - etc.maxSpread, myBid)
-    elseif trend < 0 then
-        myOffer = math.max(offer + etc.maxSpread, myOffer)
-    end
-    self.ui_state.spread = string.format("%.0f / %.0f (%.0f)", myBid, myOffer, myOffer - myBid)
-
-    local spread = myOffer - myBid
-    local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2 
-    if spread < etc.minSpread then
-        profit = 0
-    end
-
-    if profit > 0 then
-        if trend >= 0 then
-            -- enter long
-            if myOffer - offer >= etc.minSpread then
-                myBid = offer
+        if state.order:isActive() then
+            local maxError = etc.enterErrorThreshold*etc.priceStepValue
+            if not enterOp or 
+                state.order.operation ~= enterOp or 
+                math.abs(enterPrice - state.order.price) >= maxError
+            then
+                self.ui_state.state = "Изменение цены входа"
+                local res, err = state.order:kill()
+                self:checkStatus(res, err)
+                --state.phase = PHASE_PRICE_CHANGE
+                return
             end
-            state.phase = PHASE_ENTER
-            self.ui_state.state = "Отправка заявки на вход в лонг"
-            local res, err = state.order:send('B', myBid, self:getLimit())
-            self:checkStatus(res, err)
+        elseif not self:checkSchedule() then
             return
+        elseif enterOp then
+            state.phase = PHASE_ENTER
+            self.ui_state.state = "Отправка заявки на вход в " .. (enterOp == 'B' and 'лонг' or 'шорт')
+            local res, err = state.order:send(enterOp, enterPrice, self:getLimit())
+            self:checkStatus(res, err)
         else
-            -- enter short
-            if bid - myBid >= etc.minSpread then
-                myOffer = bid
-            end
-            state.phase = PHASE_ENTER
-            self.ui_state.state = "Отправка заявки на вход в шорт"
-            local res, err = state.order:send('S', myOffer, self:getLimit())
-            self:checkStatus(res, err)
-            return
+            state.phase = PHASE_WAIT
         end
     else
-        self.ui_state.state = "Мониторинг"
-        state.phase = PHASE_WAIT
+        local trend = state.fastTrend.average
+        local price = state.order.price + trend*etc.forecast
+        if state.order:isActive() then
+            local kill = false
+            if state.order.operation == 'B' and state.order.price < minPrice then
+                kill = true
+            elseif state.order.operation == 'S' and state.order.price > maxPrice then
+                kill = true
+            end
+            if kill then
+                self.ui_state.state = "Изменение цены"
+                local res, err = state.order:kill()
+                self:checkStatus(res, err)
+                state.phase = PHASE_PRICE_CHANGE
+            else
+                self.ui_state.state = "Ожидание исполнения заявки"
+            end
+        elseif state.position > 0 then
+            price = math.floor(price/etc.priceStepSize)*etc.priceStepSize
+            price = math.max(price, state.order.price + etc.minSpread)
+            price = math.min(price, state.order.price + etc.maxSpread)
+
+            price = math.min(price, maxPrice)
+            if state.phase == PHASE_PRICE_CHANGE then
+                price = bid
+            end
+            state.phase = PHASE_CLOSE
+            self.ui_state.state = "Отправка заявки на закрытие"
+            local res, err = state.order:send('S', price, state.position)
+            self:checkStatus(res, err)
+        else -- position is strictly negative
+            price = math.ceil(price/etc.priceStepSize)*etc.priceStepSize
+            price = math.min(price, state.order.price - etc.minSpread)
+            price = math.max(price, state.order.price - etc.maxSpread)
+            price = math.max(price, minPrice)
+            if state.phase == PHASE_PRICE_CHANGE then
+                price = offer
+            end
+            state.phase = PHASE_CLOSE
+            self.ui_state.state = "Отправка заявки на закрытие"
+            local res, err = state.order:send('B', price, -state.position)
+            self:checkStatus(res, err)
+        end
     end
-    self.ui_state.spread = string.format("%.0f / %.0f (%.0f)", myBid, myOffer, myOffer - myBid)
 end
 
 function strategy:onDisconnected()
