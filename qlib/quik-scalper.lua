@@ -31,24 +31,24 @@ local q_scalper = {
         priceStepSize = 10,     -- granularity of price (minimum price shift)
         priceStepValue = 12,    -- price of price step (price of minimal price shift)
         minSpread = 1,          -- минимальный спрэд
-        maxSpread = 3,          -- максимальный спрэд
+        maxSpread = 2,          -- максимальный спрэд
 
         -- Параметры задаваемые вручную
         absPositionLimit = 1,   -- максимальная приемлемая позиция (абсолютное ограничение)
         relPositionLimit = 0.3, -- максимальная приемлемая позиция по отношению к размеру счета
 
         avgFactorFast = 70,     -- "быстрый" коэффициент осреднения
-        avgFactorSlow = 300,    -- "медленный" коэфициент осреднения
+        avgFactorSlow = 250,    -- "медленный" коэфициент осреднения
         avgFactorLot = 200,     -- коэффициент осреднения размера лота (сделки)
 
         maxImbalance = 5,       -- максимально приемлимый дисбаланс стакана против тренда
         maxAverageLots = 40,    -- ставить позиции не далее этого количества средних лотов
                                 -- от края стакана (средний размер сделки = средний лот)
-        forecast = 150,
+        forecast = 75,
 
         dealCost = 2,           -- биржевой сбор
-        maxSpread = 1,          -- минимальный спрэд (для входа)
         enterErrorThreshold = 1,-- предельная ошибка на входе (шагов цены)
+        confBand = 0.2,
 
         params = {
             { name="avgFactorFast", min=1, max=1e32, step=1, precision=1e-4 },
@@ -57,7 +57,7 @@ local q_scalper = {
         -- расписание работы
         schedule = {
             { from = { hour=10, min=01, sec=00 }, to = { hour=12, min=55, sec=00 } }, -- 10:01 - 12:55
-            { from = { hour=13, min=05, sec=00 }, to = { hour=13, min=55, sec=00 } }, -- 13:05 - 13:55
+            { from = { hour=13, min=02, sec=00 }, to = { hour=13, min=55, sec=00 } }, -- 13:05 - 13:55
             { from = { hour=14, min=16, sec=00 }, to = { hour=15, min=40, sec=00 } }, -- 14:16 - 15:40
             { from = { hour=16, min=01, sec=00 }, to = { hour=21, min=55, sec=00 } }, -- 16:01 - 21:55
         },
@@ -243,7 +243,6 @@ function strategy:updateParams()
     assert(self.etc.priceStepSize > 0, "priceStepSize(" .. self.etc.asset .. ") = " .. self.etc.priceStepSize .. "\n" .. debug.traceback())
     assert(self.etc.priceStepValue > 0, "priceStepValue(" .. self.etc.asset .. ") = " .. self.etc.priceStepValue
         .. "\n" .. debug.traceback())
-    self.etc.maxSpread = self.etc.maxSpread*self.etc.priceStepSize
     self.etc.minSpread = math.ceil(self.etc.dealCost*2/self.etc.priceStepValue)*self.etc.priceStepSize
     self.etc.maxSpread = math.max(self.etc.minSpread, self.etc.maxSpread*self.etc.priceStepSize)
 end
@@ -576,19 +575,35 @@ function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
     local offerVol, demandVol = self:calcOfferDemand(l2)
     local bid = l2.bid[l2.bid_count].price
     local offer = l2.offer[1].price
+    local avgPrice = state.fastPrice.average
+    local confBand = state.fastPrice.deviation*etc.confBand
+    local mean = (bid + offer)/2
 
-    if trend > 0 and offerVol/demandVol >= etc.maxImbalance then
-        self.ui_state.state = "Неблагоприятный дисбаланс"
-        return
+    if trend > 0 then
+        if offerVol/demandVol >= etc.maxImbalance then
+            self.ui_state.state = "Неблагоприятный дисбаланс"
+            return
+        end
+        if mean > avgPrice + confBand then
+            self.ui_state.state = "Неблагоприятное отклонение"
+            return 'W'
+        end
     end
-    if trend < 0 and demandVol/offerVol >= etc.maxImbalance then
-        self.ui_state.state = "Неблагоприятный дисбаланс"
-        return
+    if trend < 0 then
+        if demandVol/offerVol >= etc.maxImbalance then
+            self.ui_state.state = "Неблагоприятный дисбаланс"
+            return
+        end
+        if mean < avgPrice - confBand then
+            self.ui_state.state = "Неблагоприятное отклонение"
+            return 'W'
+        end
     end
 
     if trend > 0 then
-        local nearPrice = math.min(offer - etc.priceStepSize, bid + etc.priceStepSize)
+        local nearPrice = bid
         local farPrice = math.floor((bid + trend*etc.forecast)/etc.priceStepSize)*etc.priceStepSize
+        farPrice = math.min(farPrice, nearPrice + etc.maxSpread)
         farPrice = math.min(farPrice, maxPrice)
         local spread = farPrice - nearPrice
         local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2
@@ -599,8 +614,9 @@ function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
         end
         return 'B', nearPrice
     elseif trend < 0 then
-        local nearPrice = math.max(bid + etc.priceStepSize, offer - etc.priceStepSize)
+        local nearPrice = offer
         local farPrice = math.ceil((offer + trend*etc.forecast)/etc.priceStepSize)*etc.priceStepSize
+        farPrice = math.max(farPrice, nearPrice - etc.maxSpread)
         farPrice = math.max(farPrice, minPrice)
         local spread = nearPrice - farPrice
         local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2
@@ -667,7 +683,9 @@ function strategy:onMarketShift(l2)
     end
 
     if state.position == 0 then
-
+        if enterOp == 'W' then
+            return
+        end
         if state.order:isActive() then
             local maxError = etc.enterErrorThreshold*etc.priceStepValue
             if not enterOp or 
@@ -709,10 +727,13 @@ function strategy:onMarketShift(l2)
                 self.ui_state.state = "Ожидание исполнения заявки"
             end
         elseif state.position > 0 then
-            price = math.floor(price/etc.priceStepSize)*etc.priceStepSize
-            price = math.max(price, state.order.price + etc.minSpread)
-            price = math.min(price, state.order.price + etc.maxSpread)
-
+            if state.order.price + etc.minSpread <= offer - etc.priceStepSize then
+                price = offer - etc.priceStepSize
+            else
+                price = math.floor(price/etc.priceStepSize)*etc.priceStepSize
+                price = math.max(price, state.order.price + etc.minSpread)
+                price = math.min(price, state.order.price + etc.maxSpread)
+            end
             price = math.min(price, maxPrice)
             if state.phase == PHASE_PRICE_CHANGE then
                 price = bid
@@ -722,9 +743,13 @@ function strategy:onMarketShift(l2)
             local res, err = state.order:send('S', price, state.position)
             self:checkStatus(res, err)
         else -- position is strictly negative
-            price = math.ceil(price/etc.priceStepSize)*etc.priceStepSize
-            price = math.min(price, state.order.price - etc.minSpread)
-            price = math.max(price, state.order.price - etc.maxSpread)
+            if state.order.price - etc.minSpread >= bid + etc.priceStepSize then
+                price = bid + etc.priceStepSize
+            else
+                price = math.ceil(price/etc.priceStepSize)*etc.priceStepSize
+                price = math.min(price, state.order.price - etc.minSpread)
+                price = math.max(price, state.order.price - etc.maxSpread)
+            end
             price = math.max(price, minPrice)
             if state.phase == PHASE_PRICE_CHANGE then
                 price = offer
