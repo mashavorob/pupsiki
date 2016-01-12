@@ -587,7 +587,7 @@ function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
     end
 
     if trend > 0 then
-        local nearPrice = offer - etc.priceStepSize
+        local nearPrice = math.min(offer - etc.priceStepSize, bid + etc.priceStepSize)
         local farPrice = math.floor((bid + trend*etc.forecast)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.min(farPrice, maxPrice)
         local spread = farPrice - nearPrice
@@ -599,7 +599,7 @@ function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
         end
         return 'B', nearPrice
     elseif trend < 0 then
-        local nearPrice = bid + etc.priceStepSize
+        local nearPrice = math.max(bid + etc.priceStepSize, offer - etc.priceStepSize)
         local farPrice = math.ceil((offer + trend*etc.forecast)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.max(farPrice, minPrice)
         local spread = nearPrice - farPrice
