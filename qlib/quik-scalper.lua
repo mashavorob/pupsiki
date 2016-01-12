@@ -48,7 +48,7 @@ local q_scalper = {
 
         dealCost = 2,           -- биржевой сбор
         enterErrorThreshold = 1,-- предельная ошибка на входе (шагов цены)
-        confBand = 0.2,
+        confBand = 0.3,
 
         params = {
             { name="avgFactorFast", min=1, max=1e32, step=1, precision=1e-4 },
@@ -575,7 +575,7 @@ function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
     local offerVol, demandVol = self:calcOfferDemand(l2)
     local bid = l2.bid[l2.bid_count].price
     local offer = l2.offer[1].price
-    local avgPrice = state.fastPrice.average
+    local avgPrice = state.fastPrice.average + state.fastTrend.average/state.fastPrice.alpha
     local confBand = state.fastPrice.deviation*etc.confBand
     local mean = (bid + offer)/2
 
