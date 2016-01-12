@@ -37,14 +37,16 @@ local q_scalper = {
         absPositionLimit = 1,   -- максимальная приемлемая позиция (абсолютное ограничение)
         relPositionLimit = 0.3, -- максимальная приемлемая позиция по отношению к размеру счета
 
-        avgFactorFast = 70,     -- "быстрый" коэффициент осреднения
-        avgFactorSlow = 250,    -- "медленный" коэфициент осреднения
+        avgFactorFast = 50,     -- "быстрый" коэффициент осреднения
+        avgFactorSlow = 200,    -- "медленный" коэфициент осреднения
         avgFactorLot = 200,     -- коэффициент осреднения размера лота (сделки)
 
         maxImbalance = 5,       -- максимально приемлимый дисбаланс стакана против тренда
         maxAverageLots = 40,    -- ставить позиции не далее этого количества средних лотов
                                 -- от края стакана (средний размер сделки = средний лот)
-        forecast = 75,
+
+        farForecast = 75,       -- прогноз цены (закрытие сделки)
+        nearForecast = 12,      -- прогноз цены (открытие сделки)
 
         dealCost = 2,           -- биржевой сбор
         enterErrorThreshold = 1,-- предельная ошибка на входе (шагов цены)
@@ -601,8 +603,8 @@ function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
     end
 
     if trend > 0 then
-        local nearPrice = bid
-        local farPrice = math.floor((bid + trend*etc.forecast)/etc.priceStepSize)*etc.priceStepSize
+        local nearPrice = math.floor((bid + trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
+        local farPrice = math.floor((bid + trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.min(farPrice, nearPrice + etc.maxSpread)
         farPrice = math.min(farPrice, maxPrice)
         local spread = farPrice - nearPrice
@@ -614,8 +616,8 @@ function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
         end
         return 'B', nearPrice
     elseif trend < 0 then
-        local nearPrice = offer
-        local farPrice = math.ceil((offer + trend*etc.forecast)/etc.priceStepSize)*etc.priceStepSize
+        local nearPrice = math.ceil((offer + trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
+        local farPrice = math.ceil((offer + trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.max(farPrice, nearPrice - etc.maxSpread)
         farPrice = math.max(farPrice, minPrice)
         local spread = nearPrice - farPrice
@@ -710,7 +712,7 @@ function strategy:onMarketShift(l2)
         end
     else
         local trend = state.fastTrend.average
-        local price = state.order.price + trend*etc.forecast
+        local price = state.order.price + trend*etc.farForecast
         if state.order:isActive() then
             local kill = false
             if state.order.operation == 'B' and state.order.price < minPrice then
