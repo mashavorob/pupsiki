@@ -50,7 +50,7 @@ local q_scalper = {
 
         dealCost = 2,           -- биржевой сбор
         enterErrorThreshold = 1,-- предельная ошибка на входе (шагов цены)
-        confBand = 0.3,
+        confBand = 0.2,
 
         params = {
             { name="avgFactorFast", min=1, max=1e32, step=1, precision=1e-4 },
@@ -712,13 +712,25 @@ function strategy:onMarketShift(l2)
         end
     else
         local trend = state.fastTrend.average
+        
         local price = state.order.price + trend*etc.farForecast
         if state.order:isActive() then
+            
             local kill = false
-            if state.order.operation == 'B' and state.order.price < minPrice then
-                kill = true
-            elseif state.order.operation == 'S' and state.order.price > maxPrice then
-                kill = true
+            if state.order.operation == 'B' then
+                if trend > 0.3 then
+                    minPrice = minPrice + slowDeviation*(1 - etc.confBand)
+                end
+                if state.order.price < minPrice then
+                    kill = true
+                end
+            elseif state.order.operation == 'S' then
+                if trend < -0.3 then
+                    maxPrice = maxPrice - slowDeviation*(1 - etc.confBand)
+                end
+                if state.order.price > maxPrice then
+                    kill = true
+                end
             end
             if kill then
                 self.ui_state.state = "Изменение цены"
