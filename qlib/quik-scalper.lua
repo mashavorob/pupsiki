@@ -14,6 +14,7 @@
 require("qlib/quik-etc")
 require("qlib/quik-avg")
 require("qlib/quik-order")
+require("qlib/quik-labels")
 require("qlib/quik-utils")
 
 local q_scalper = {
@@ -22,7 +23,7 @@ local q_scalper = {
         -- √лавные параметры, задаваемые в ручную
         asset = "RIH6",         -- бумага
         class = "SPBFUT",       -- класс
-        title = "qscalper",     -- что это ваапще такое
+        title = "qscalper",     -- заголовок таблицы
 
         -- ѕараметры вычисл€емые автоматически
         account = "SPBFUT005eC",
@@ -45,12 +46,17 @@ local q_scalper = {
         maxAverageLots = 40,    -- ставить позиции не далее этого количества средних лотов
                                 -- от кра€ стакана (средний размер сделки = средний лот)
 
-        farForecast = 75,       -- прогноз цены (закрытие сделки)
         nearForecast = 12,      -- прогноз цены (открытие сделки)
+        farForecast = 75,       -- прогноз цены (закрытие сделки)
 
         dealCost = 2,           -- биржевой сбор
         enterErrorThreshold = 1,-- предельна€ ошибка на входе (шагов цены)
-        confBand = 0.2,
+        
+        confBand = 0.2,         -- "доверительный диапазон" (в среднеквадратических отклонени€х)
+        trendThreshold = 0.25,  -- превышение величины тренда этого порога означает уверенный 
+                                -- рост или снижение без веро€тности скорого разворота
+                                -- TODO: расчитать дисперсию тренда, жесткий порог не работает при
+                                --       малых объемах торгов
 
         params = {
             { name="avgFactorFast", min=1, max=1e32, step=1, precision=1e-4 },
@@ -59,9 +65,10 @@ local q_scalper = {
         -- расписание работы
         schedule = {
             { from = { hour=10, min=01, sec=00 }, to = { hour=12, min=55, sec=00 } }, -- 10:01 - 12:55
-            { from = { hour=13, min=02, sec=00 }, to = { hour=13, min=55, sec=00 } }, -- 13:05 - 13:55
-            { from = { hour=14, min=16, sec=00 }, to = { hour=15, min=40, sec=00 } }, -- 14:16 - 15:40
-            { from = { hour=16, min=01, sec=00 }, to = { hour=21, min=55, sec=00 } }, -- 16:01 - 21:55
+            { from = { hour=13, min=01, sec=00 }, to = { hour=13, min=55, sec=00 } }, -- 13:01 - 13:55
+            { from = { hour=14, min=16, sec=00 }, to = { hour=15, min=45, sec=00 } }, -- 14:16 - 15:45
+            { from = { hour=16, min=01, sec=00 }, to = { hour=18, min=55, sec=00 } }, -- 16:01 - 18:55
+            { from = { hour=19, min=01, sec=00 }, to = { hour=21, min=55, sec=00 } }, -- 19:01 - 21:55
         },
     },
 
@@ -90,69 +97,6 @@ local PHASE_CANCEL          = 4
 local MAX_LABELS = 100
 local INTERVAL = 60
 
-local q_label = { }
-
-function q_label.createLabel(tag, y, t, cr, img)
-    local label = {
-    }
-    function label:init(tag, y, t, cr, img)
-        local descr = {
-            IMAGE_PATH = img,
-            YVALUE = y,
-            DATE = os.date("%Y%m%d", t),
-            TIME = os.date("%H%M%S", t),
-            R = cr.r,
-            G = cr.g,
-            B = cr.b,
-            HINT = string.format("%.0f", y)
-        }
-        self.tag = tag
-        self.id = AddLabel(tag, descr)
-        assert(self.id, "AddLabel() returned " .. tostring(self.id))
-        self.cr = cr
-        self.img = img
-    end
-    function label:remove()
-        DelLabel(self.tag, self.id)
-    end
-    function label:update(y, t, cr, img)
-        y = y or self.y
-        t = t or self.t
-        cr = cr or self.cr
-        img = img or self.img
-        local descr = {
-            IMAGE_PATH = img,
-            YVALUE = y,
-            DATE = os.date("%Y%m%d", t),
-            TIME = os.date("%H%M%S", t),
-            R = cr.r,
-            G = cr.g,
-            B = cr.b,
-            HINT = string.format("%.0f", y)
-        }
-        SetLabelParams(self.tag, self.id, descr)
-    end
-    label:init(tag, y, t, cr, img)
-    return label
-end
-
-function q_label.createFactory(tag, cr, img)
-    local factory = {
-        tag = tag,
-        cr = cr,
-        img = img,
-    }
-    function factory:add(y, t, cr, img)
-        assert(y)
-        assert(t)
-        cr = cr or self.cr
-        img = img or self.img
-        return q_label.createLabel(self.tag, y, t, cr, img)
-    end
-    DelAllLabels(tag)
-    return factory
-end
-
 function q_scalper.create(etc)
 
     local self = { 
@@ -174,8 +118,17 @@ function q_scalper.create(etc)
 
             phase = PHASE_WAIT,
 
-            tickCount = 0,
             position = 0,
+
+            -- market status
+            market = {
+                bid = 0,
+                offer = 0,
+                trend = 0,
+                minPrice = 0,
+                maxPrice = 0,
+                fastPrice = 0,
+            },
 
             fastPrice = { },
             fastTrend = { },
@@ -187,8 +140,7 @@ function q_scalper.create(etc)
 
             order = { },
 
-            labelFactorySlow = q_label.createFactory("RI-Price", {r=180,g=180,b=0}, q_fname.normalize("qpict/slow.bmp")),
-            labelFactoryFast = q_label.createFactory("RI-Price", {r=180,g=0,b=180}, q_fname.normalize("qpict/fast.bmp")),
+            labelFactory = q_label.createFactory("RI-Price", {r=180,g=180,b=0}, q_fname.normalize("qpict/slow.bmp")),
 
             labels = { },
             lastLabel = 0,
@@ -294,9 +246,30 @@ function strategy:init()
 
     for i = first, n - 1 do
         local trade = getItem("all_trades", i)
-        if trade.sec_code == self.etc.asset and trade.class_code == self.etc.class then
+        local currTime = os.time(trade.datetime)
+        if trade.sec_code == self.etc.asset and trade.class_code == self.etc.class and self:checkSchedule(currTime) then
             local price = trade.price
-            local currTime = os.time(trade.datetime)
+
+            local l2 = { 
+                bid_count = 1, 
+                offer_count = 1,
+                bid = { {
+                    price = price,
+                    quantity = 1e12,
+                } },
+                offer = { {
+                    price = price,
+                    quantity = 1e12,
+                } },
+            }
+
+            if bit.band(trade.flags, 1) ~= 0 then
+                l2.bid[1].price = l2.bid[1].price - self.etc.priceStepSize
+            else
+                l2.offer[1].price = l2.offer[1].price + self.etc.priceStepSize
+            end
+
+            local price = (l2.bid[1].price + l2.offer[1].price)/2
 
             self.state.fastPrice:onValue(price)
             self.state.fastTrend:onValue((price - self.state.fastPrice.average)*self.state.fastPrice.alpha)
@@ -304,6 +277,7 @@ function strategy:init()
             self.state.slowPrice:onValue(price)
             self.state.slowTrend:onValue((price - self.state.slowPrice.average)*self.state.slowPrice.alpha)
 
+            self:calcMarketParams(l2)
             self.state.lotSize:onValue(trade.qty)
 
             self:updateLabels(currTime)
@@ -447,6 +421,7 @@ local lastTime = 0
 function strategy:updateLabels(currTime)
     local etc = self.etc
     local state = self.state
+    local market = state.market
 
     local initial = false
     if currTime then
@@ -460,35 +435,14 @@ function strategy:updateLabels(currTime)
         return
     end
 
-    -- do not correct slow price using trend
-    local slowDeviation = math.max(etc.minSpread, state.slowPrice.deviation)
-    local priceSlow = state.slowPrice.average + state.slowTrend.average/state.slowPrice.alpha
-    local minPriceSlow = priceSlow - slowDeviation
-    local maxPriceSlow = priceSlow + slowDeviation
-
-    maxPriceSlow = math.floor(maxPriceSlow/etc.priceStepSize)*etc.priceStepSize
-    minPriceSlow = math.ceil(minPriceSlow/etc.priceStepSize)*etc.priceStepSize
-
-    -- correct fast price using trend
-    local priceFast = state.fastPrice.average + state.fastTrend.average/state.fastPrice.alpha
-    local minPriceFast = priceFast - state.fastPrice.deviation
-    local maxPriceFast = priceFast + state.fastPrice.deviation
-
-    maxPriceFast = math.floor(maxPriceFast/etc.priceStepSize)*etc.priceStepSize
-    minPriceFast = math.ceil(minPriceFast/etc.priceStepSize)*etc.priceStepSize
-
     if currTime == lastTime and #state.labels > 0 then
-        state.labels[#state.labels - 3]:update(maxPriceSlow, currTime)
-        state.labels[#state.labels - 2]:update(minPriceSlow, currTime)
-        state.labels[#state.labels - 1]:update(maxPriceFast, currTime)
-        state.labels[#state.labels - 0]:update(minPriceFast, currTime)
+        state.labels[#state.labels - 1]:update(market.maxPrice, currTime)
+        state.labels[#state.labels - 0]:update(market.minPrice, currTime)
     else
         local factor = #state.labels
 
-        table.insert(state.labels, self.state.labelFactorySlow:add(maxPriceSlow, currTime))
-        table.insert(state.labels, self.state.labelFactorySlow:add(minPriceSlow, currTime))
-        table.insert(state.labels, self.state.labelFactoryFast:add(maxPriceFast, currTime))
-        table.insert(state.labels, self.state.labelFactoryFast:add(minPriceFast, currTime))
+        table.insert(state.labels, self.state.labelFactory:add(market.maxPrice, currTime))
+        table.insert(state.labels, self.state.labelFactory:add(market.minPrice, currTime))
 
         factor = #state.labels - factor
 
@@ -503,13 +457,6 @@ end
 
 function strategy:getQuoteLevel2()
     local l2 = getQuoteLevel2(self.etc.class, self.etc.asset)
-
-    if not l2.bid or not l2.offer then
-        l2.bid = { quantity = 0, price = self.etc.minPrice }
-        l2.offer = { quantity = 0, price = self.etc.maxPrice }
-        l2.bid_count = #l2.bid
-        l2.offer_count = #l2.offer
-    end
 
     l2.bid_count = tonumber(l2.bid_count)
     l2.offer_count = tonumber(l2.offer_count)
@@ -568,45 +515,82 @@ function strategy:calcMinBidMaxOffer(l2)
     return minBid, maxOffer
 end
 
--- function returns operation, price
-function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
+-- function calculates market parameters
+function strategy:calcMarketParams(l2)
 
     local etc = self.etc
     local state = self.state
-    local trend = state.fastTrend.average
-    local offerVol, demandVol = self:calcOfferDemand(l2)
-    local bid = l2.bid[l2.bid_count].price
-    local offer = l2.offer[1].price
-    local avgPrice = state.fastPrice.average + state.fastTrend.average/state.fastPrice.alpha
-    local confBand = state.fastPrice.deviation*etc.confBand
-    local mean = (bid + offer)/2
+    local market = state.market
 
-    if trend > 0 then
+    market.bid = l2.bid[l2.bid_count].price
+    market.offer = l2.offer[1].price
+
+    local slowDeviation = state.slowPrice.deviation
+    local slowPrice = state.slowPrice.average + state.slowTrend.average/state.slowPrice.alpha
+
+    market.trend = state.fastTrend.average
+    market.maxPrice = slowPrice + slowDeviation
+    market.minPrice = slowPrice - slowDeviation
+    if market.trend > etc.trendThreshold then
+        market.minPrice = market.minPrice + slowDeviation*(1 - etc.confBand)
+    elseif market.trend < -etc.trendThreshold then
+        market.maxPrice = market.maxPrice - slowDeviation*(1 - etc.confBand)
+    end
+    market.maxPrice = math.floor(market.maxPrice/etc.priceStepSize)*etc.priceStepSize
+    market.minPrice = math.ceil(market.minPrice/etc.priceStepSize)*etc.priceStepSize
+
+    market.fastPrice = state.fastPrice.average + state.fastTrend.average/state.fastPrice.alpha
+end
+
+-- function returns operation, price
+function strategy:calcEnterOp()
+
+    local etc = self.etc
+    local state = self.state
+    local market = state.market
+    local offerVol, demandVol = self:calcOfferDemand(l2)
+    local confBand = state.fastPrice.deviation*etc.confBand
+    local maxBand = state.fastPrice.deviation
+    local mean = (market.bid + market.offer)/2
+
+    self.ui_state.spread = "-- / -- (--)"
+
+    if market.trend > 0 then
         if offerVol/demandVol >= etc.maxImbalance then
             self.ui_state.state = "Ќеблагопри€тный дисбаланс"
             return
         end
-        if mean > avgPrice + confBand then
-            self.ui_state.state = "Ќеблагопри€тное отклонение"
-            return 'W'
+        if mean > market.fastPrice + confBand then
+            if mean < market.fastPrice + maxBand then
+                self.ui_state.state = "Ќеблагопри€тное отклонение"
+                return 'W'
+            else
+                self.ui_state.state = "—ильное отклонение"
+                return
+            end
         end
     end
-    if trend < 0 then
+    if market.trend < 0 then
         if demandVol/offerVol >= etc.maxImbalance then
             self.ui_state.state = "Ќеблагопри€тный дисбаланс"
             return
         end
-        if mean < avgPrice - confBand then
-            self.ui_state.state = "Ќеблагопри€тное отклонение"
-            return 'W'
+        if mean < market.fastPrice - confBand then
+            if mean > market.fastPrice - maxBand then
+                self.ui_state.state = "Ќеблагопри€тное отклонение"
+                return 'W'
+            else
+                self.ui_state.state = "—ильное отклонение"
+                return
+            end
         end
     end
 
-    if trend > 0 then
-        local nearPrice = math.floor((bid + trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
-        local farPrice = math.floor((bid + trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
+    if market.trend > 0 then
+        local nearPrice = math.floor((market.bid + market.trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
+        local farPrice = math.floor((market.bid + market.trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.min(farPrice, nearPrice + etc.maxSpread)
-        farPrice = math.min(farPrice, maxPrice)
+        farPrice = math.min(farPrice, market.maxPrice)
         local spread = farPrice - nearPrice
         local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2
         self.ui_state.spread = string.format("%.0f / %.0f (%.0f)", nearPrice, farPrice, spread)
@@ -615,11 +599,11 @@ function strategy:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
             return
         end
         return 'B', nearPrice
-    elseif trend < 0 then
-        local nearPrice = math.ceil((offer + trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
-        local farPrice = math.ceil((offer + trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
+    elseif market.trend < 0 then
+        local nearPrice = math.ceil((market.offer + market.trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
+        local farPrice = math.ceil((market.offer + market.trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.max(farPrice, nearPrice - etc.maxSpread)
-        farPrice = math.max(farPrice, minPrice)
+        farPrice = math.max(farPrice, market.minPrice)
         local spread = nearPrice - farPrice
         local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2
         self.ui_state.spread = string.format("%.0f / %.0f (%.0f)", farPrice, nearPrice, spread)
@@ -633,47 +617,21 @@ end
 
 function strategy:onMarketShift(l2)
 
-    local etc = self.etc
-    local state = self.state
     l2 = l2 or self:getQuoteLevel2()
 
-    if #l2.bid <= 1 or #l2.offer <= 1 then
+    -- when clearing is in progress l2 data might be empty
+    if l2.bid_count <= 1 or l2.offer_count <= 1 then
         return
     end
-
-    local bid = l2.bid[l2.bid_count].price
-    local offer = l2.offer[1].price
-
-    local slowDeviation = math.max(etc.minSpread, state.slowPrice.deviation)
-    local slowPrice = state.slowPrice.average + state.slowTrend.average/state.slowPrice.alpha
-    local maxPrice = slowPrice + slowDeviation
-    local minPrice = slowPrice - slowDeviation
-
-    local fastPrice = state.fastPrice.average + state.fastTrend.average/state.fastPrice.alpha
-    local myOffer = fastPrice + state.fastPrice.deviation
-    local myBid = fastPrice - state.fastPrice.deviation
     
-    maxPrice = math.floor(maxPrice/etc.priceStepSize)*etc.priceStepSize
-    minPrice = math.ceil(minPrice/etc.priceStepSize)*etc.priceStepSize
-
-    myOffer = math.floor(myOffer/etc.priceStepSize)*etc.priceStepSize
-    myBid = math.ceil(myBid/etc.priceStepSize)*etc.priceStepSize
-
-    myOffer = math.min(myOffer, maxPrice)
-    myBid = math.max(myBid, minPrice)
-
-    local minBid, maxOffer = self:calcMinBidMaxOffer(l2)
-    myOffer = math.min(myOffer, maxOffer)
-    myBid = math.max(myBid, minBid)
-
-    local spread = myOffer - myBid
-    local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2 
-    if spread < etc.minSpread then
-        profit = 0
-    end
+    self:calcMarketParams(l2)
 
     -- calculate enter price and operation
-    local enterOp, enterPrice = self:calcEnterOp(l2, myBid, myOffer, minPrice, maxPrice)
+    local enterOp, enterPrice = self:calcEnterOp()
+
+    local etc = self.etc
+    local state = self.state
+    local market = state.market
 
     if self.state.halt or self.state.cancel or self.state.pause then
         return
@@ -711,24 +669,15 @@ function strategy:onMarketShift(l2)
             state.phase = PHASE_WAIT
         end
     else
-        local trend = state.fastTrend.average
-        
-        local price = state.order.price + trend*etc.farForecast
+        local price = state.order.price + market.trend*etc.farForecast
         if state.order:isActive() then
-            
             local kill = false
             if state.order.operation == 'B' then
-                if trend > 0.3 then
-                    minPrice = minPrice + slowDeviation*(1 - etc.confBand)
-                end
-                if state.order.price < minPrice then
+                if state.order.price < market.minPrice then
                     kill = true
                 end
             elseif state.order.operation == 'S' then
-                if trend < -0.3 then
-                    maxPrice = maxPrice - slowDeviation*(1 - etc.confBand)
-                end
-                if state.order.price > maxPrice then
+                if state.order.price > market.maxPrice then
                     kill = true
                 end
             end
@@ -741,32 +690,32 @@ function strategy:onMarketShift(l2)
                 self.ui_state.state = "ќжидание исполнени€ за€вки"
             end
         elseif state.position > 0 then
-            if state.order.price + etc.minSpread <= offer - etc.priceStepSize then
-                price = offer - etc.priceStepSize
+            if state.order.price + etc.minSpread <= market.offer - etc.priceStepSize then
+                price = market.offer - etc.priceStepSize
             else
                 price = math.floor(price/etc.priceStepSize)*etc.priceStepSize
                 price = math.max(price, state.order.price + etc.minSpread)
                 price = math.min(price, state.order.price + etc.maxSpread)
             end
-            price = math.min(price, maxPrice)
+            price = math.min(price, market.maxPrice)
             if state.phase == PHASE_PRICE_CHANGE then
-                price = bid
+                price = market.bid
             end
             state.phase = PHASE_CLOSE
             self.ui_state.state = "ќтправка за€вки на закрытие"
             local res, err = state.order:send('S', price, state.position)
             self:checkStatus(res, err)
         else -- position is strictly negative
-            if state.order.price - etc.minSpread >= bid + etc.priceStepSize then
-                price = bid + etc.priceStepSize
+            if state.order.price - etc.minSpread >= market.bid + etc.priceStepSize then
+                price = market.bid + etc.priceStepSize
             else
                 price = math.ceil(price/etc.priceStepSize)*etc.priceStepSize
                 price = math.min(price, state.order.price - etc.minSpread)
                 price = math.max(price, state.order.price - etc.maxSpread)
             end
-            price = math.max(price, minPrice)
+            price = math.max(price, market.minPrice)
             if state.phase == PHASE_PRICE_CHANGE then
-                price = offer
+                price = market.offer
             end
             state.phase = PHASE_CLOSE
             self.ui_state.state = "ќтправка за€вки на закрытие"
