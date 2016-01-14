@@ -14,7 +14,6 @@
 require("qlib/quik-etc")
 require("qlib/quik-avg")
 require("qlib/quik-order")
---require("qlib/quik-labels")
 require("qlib/quik-utils")
 
 local q_scalper = {
@@ -146,11 +145,6 @@ function q_scalper.create(etc)
             lotSize = { },
 
             order = { },
-
-            --[[ labelFactory = q_label.createFactory("RI-Price", {r=180,g=180,b=0}, q_fname.normalize("qpict/slow.bmp")),
-
-            labels = { },
-            lastLabel = 0,]]
         },
     }
 
@@ -288,8 +282,6 @@ function strategy:init()
 
             self:calcMarketParams(l2)
             self.state.lotSize:onValue(trade.qty)
-
-            -- self:updateLabels(currTime)
         end
     end
     Subscribe_Level_II_Quotes(self.etc.class, self.etc.asset)
@@ -355,13 +347,11 @@ function strategy:onQuote(class, asset)
 
         self:updatePosition()
         self:onMarketShift(l2)
-        -- self:updateLabels()
     end
 end
 
 function strategy:onIdle()
     q_order.onIdle()
-    --self:updateLabels()
     self:updatePosition()
 
     local state = self.state
@@ -435,45 +425,6 @@ function strategy:onIdle()
 end
 
 local lastTime = 0
-
---[[
-function strategy:updateLabels(currTime)
-    local etc = self.etc
-    local state = self.state
-    local market = state.market
-
-    local initial = false
-    if currTime then
-        currTime = currTime - 1
-        initial = true
-    else
-        currTime = os.time()
-    end
-    local currTime = math.floor((currTime - 1)/INTERVAL)*INTERVAL
-    if initial and (currTime == lastTime) then
-        return
-    end
-
-    if currTime == lastTime and #state.labels > 0 then
-        state.labels[#state.labels - 1]:update(market.maxPrice, currTime)
-        state.labels[#state.labels - 0]:update(market.minPrice, currTime)
-    else
-        local factor = #state.labels
-
-        table.insert(state.labels, self.state.labelFactory:add(market.maxPrice, currTime))
-        table.insert(state.labels, self.state.labelFactory:add(market.minPrice, currTime))
-
-        factor = #state.labels - factor
-
-        while #state.labels > factor*MAX_LABELS do
-            local label = state.labels[1]
-            table.remove(state.labels, 1)
-            label:remove()
-        end
-    end
-    lastTime = currTime
-end
-]]
 
 function strategy:getQuoteLevel2()
     local l2 = getQuoteLevel2(self.etc.class, self.etc.asset)
