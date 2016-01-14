@@ -70,15 +70,19 @@ function avgEx:onValue(val)
         self.average[0] = val
         self.dispersion[0] = 0
     end
+    
     self.average[0] = self.average[0] + self.alpha*(val - self.average[0])
-    local d = math.pow(self:getAverage() - val, 2)
-    self.dispersion[0] = self.dispersion[0] + self.alpha*(d - self.dispersion[0])
 
-    local v = val
+    local v = { }
+    v[0] = val;
+
     for i = 1,#self.average do
-        v  = (v - self.average[i - 1])*self.alpha
-        self.average[i] = self.average[i] + self.alpha*(v - self.average[i])
-        d = math.pow(self:getAverage(i) - v, 2)
+        v[i]  = (v[i - 1] - self.average[i - 1])*self.alpha
+        self.average[i] = self.average[i] + self.alpha*(v[i] - self.average[i])
+    end
+
+    for i = 0,#self.dispersion do
+        local d = math.pow(self:getAverage(i) - v[i], 2)
         self.dispersion[i] = self.dispersion[i] + self.alpha*(d - self.dispersion[i])
     end
 end
@@ -95,7 +99,7 @@ function avgEx:getTrend()
     return self:getAverage(1)
 end
 
-function avgEx:getAccel()
+function avgEx:getTrend2()
     return self:getAverage(2)
 end
 

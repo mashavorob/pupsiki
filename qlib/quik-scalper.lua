@@ -14,7 +14,7 @@
 require("qlib/quik-etc")
 require("qlib/quik-avg")
 require("qlib/quik-order")
-require("qlib/quik-labels")
+--require("qlib/quik-labels")
 require("qlib/quik-utils")
 
 local q_scalper = {
@@ -40,8 +40,8 @@ local q_scalper = {
 
         maxLoss = 700,          -- максимальная приемлимая потеря
 
-        avgFactorFast = 30,     -- "быстрый" коэффициент осреднения
-        avgFactorSlow = 150,    -- "медленный" коэфициент осреднения
+        avgFactorFast = 70,     -- "быстрый" коэффициент осреднения
+        avgFactorSlow = 200,    -- "медленный" коэфициент осреднения
         avgFactorLot = 200,     -- коэффициент осреднения размера лота (сделки)
 
         maxImbalance = 5,       -- максимально приемлимый дисбаланс стакана против тренда
@@ -58,7 +58,7 @@ local q_scalper = {
         trendThreshold = 0.8,   -- превышение величины тренда этого порога означает уверенный 
                                 -- рост или снижение без вероятности скорого разворота
                                 -- пороговое значение задается в стандартных отклонениях тренда
-
+                                --
         params = {
             { name="avgFactorFast", min=1, max=1e32, step=1, precision=1e-4 },
             { name="avgFactorSlow", min=1, max=1e32, step=1, precision=1e-4 },
@@ -77,10 +77,10 @@ local q_scalper = {
         { name="control", title="Упавление", ctype=QTABLE_STRING_TYPE, width=12, format="%s" },
         { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" },
         { name="trend", title="Трэнд", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.3f" },
+        { name="spread", title="Cпред", ctype=QTABLE_STRING_TYPE, width=22, format="%s" },
+        { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=25, format="%s" },
         { name="averages", title="Средние", ctype=QTABLE_STRING_TYPE, width=32, format="%s" },
         { name="deviations", title="Ст. отклонения", ctype=QTABLE_STRING_TYPE, width=25, format="%s" },
-        { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=25, format="%s" },
-        { name="spread", title="Cпред", ctype=QTABLE_STRING_TYPE, width=22, format="%s" },
         { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=40, format="%s" },
         { name="lastError", title="Результат последняя операции", ctype=QTABLE_STRING_TYPE, width=80, format="%s" }, 
     },
@@ -147,10 +147,10 @@ function q_scalper.create(etc)
 
             order = { },
 
-            labelFactory = q_label.createFactory("RI-Price", {r=180,g=180,b=0}, q_fname.normalize("qpict/slow.bmp")),
+            --[[ labelFactory = q_label.createFactory("RI-Price", {r=180,g=180,b=0}, q_fname.normalize("qpict/slow.bmp")),
 
             labels = { },
-            lastLabel = 0,
+            lastLabel = 0,]]
         },
     }
 
@@ -224,7 +224,7 @@ function strategy:init()
 
     self.state.fastPrice = q_avg.createEx(self.etc.avgFactorFast, 2)
     self.state.slowPrice = q_avg.createEx(self.etc.avgFactorSlow, 2)
-    self.state.lotSize = q_avg.createEx(self.etc.avgFactorLot, 1)
+    self.state.lotSize = q_avg.createEx(self.etc.avgFactorLot, 0)
 
     self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
 
@@ -253,11 +253,13 @@ function strategy:init()
             last = m
         end
     end
+    
+    self.state.lotSize:onValue(1)
 
     for i = first, n - 1 do
         local trade = getItem("all_trades", i)
         local currTime = os.time(trade.datetime)
-        if trade.sec_code == self.etc.asset and trade.class_code == self.etc.class and self:checkSchedule(currTime) then
+        if trade.sec_code == self.etc.asset and trade.class_code == self.etc.class --[[and self:checkSchedule(currTime)]] then
             local price = trade.price
 
             local l2 = { 
@@ -287,7 +289,7 @@ function strategy:init()
             self:calcMarketParams(l2)
             self.state.lotSize:onValue(trade.qty)
 
-            self:updateLabels(currTime)
+            -- self:updateLabels(currTime)
         end
     end
     Subscribe_Level_II_Quotes(self.etc.class, self.etc.asset)
@@ -319,7 +321,7 @@ end
 function strategy:onTrade(trade)
     q_order.onTrade(trade)
     self:updatePosition()
-    self:onMarketShift()
+    --self:onMarketShift()
 end
 
 function strategy:onAllTrade(trade)
@@ -337,12 +339,15 @@ function strategy:onQuote(class, asset)
     end
 
     local l2 = self:getQuoteLevel2()
+    if not l2.bid or not l2.offer then
+        return
+    end
 
     local bid = tonumber(l2.bid[l2.bid_count].price)
     local offer = tonumber(l2.offer[1].price)
     local price = (bid + offer)/2
 
-    --if price ~= prevPrice then
+    if price ~= prevPrice then
         prevPrice = price
 
         self.state.fastPrice:onValue(price)
@@ -350,18 +355,17 @@ function strategy:onQuote(class, asset)
 
         self:updatePosition()
         self:onMarketShift(l2)
-        self:updateLabels()
-    --end
+        -- self:updateLabels()
+    end
 end
 
 function strategy:onIdle()
     q_order.onIdle()
-    self:updateLabels()
+    --self:updateLabels()
+    self:updatePosition()
 
     local state = self.state
     local ui_state = self.ui_state
-
-    self:updatePosition()
 
     local balance = q_utils.getBalance(self.etc.account)
     state.balance.maxValue = math.max(state.balance.maxValue, balance)
@@ -432,6 +436,7 @@ end
 
 local lastTime = 0
 
+--[[
 function strategy:updateLabels(currTime)
     local etc = self.etc
     local state = self.state
@@ -468,6 +473,7 @@ function strategy:updateLabels(currTime)
     end
     lastTime = currTime
 end
+]]
 
 function strategy:getQuoteLevel2()
     local l2 = getQuoteLevel2(self.etc.class, self.etc.asset)
@@ -543,6 +549,8 @@ function strategy:calcMarketParams(l2)
     local slowPrice = state.slowPrice:getAverage()
 
     market.trend = state.fastPrice:getTrend()
+    market.trend2 = state.fastPrice:getTrend2()
+
     market.maxPrice = slowPrice + slowDeviation
     market.minPrice = slowPrice - slowDeviation
     if market.trend > etc.trendThreshold*state.fastPrice:getTrendDeviation() then
@@ -569,6 +577,15 @@ function strategy:calcEnterOp()
 
     self.ui_state.spread = "-- / -- (--)"
 
+    local loss = state.balance.maxValue - state.balance.currValue
+    if loss > etc.maxLoss then
+        self.ui_state.state = string.format( "Превышение убытка (%.0f из %0f)"
+                                           , loss
+                                           , etc.maxLoss
+                                           )
+        return
+    end
+
     if market.trend > 0 then
         if offerVol/demandVol >= etc.maxImbalance then
             self.ui_state.state = "Неблагоприятный дисбаланс"
@@ -591,19 +608,12 @@ function strategy:calcEnterOp()
         end
     end
 
-    local loss = state.balance.maxValue - state.balance.currValue
-    if loss > etc.maxLoss then
-        self.ui_state.state = string.format( "Превышение убытка (%.0f из %0f)"
-                                           , loss
-                                           , etc.maxLoss
-                                           )
-        return
-    end
-
+    local nearShift = market.trend*etc.nearForecast + market.trend2*math.pow(etc.nearForecast, 2)/2
+    local farShift = market.trend*etc.farForecast + market.trend2*math.pow(etc.farForecast, 2)/2
     if market.trend > 0 then
-        local basePrice = math.min(market.fastPrice + maxBand, market.bid)
-        local nearPrice = math.floor((basePrice + market.trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
-        local farPrice = math.floor((market.bid + market.trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
+        local basePrice = math.min(market.fastPrice + confBand, market.bid)
+        local nearPrice = math.floor((basePrice + nearShift)/etc.priceStepSize)*etc.priceStepSize
+        local farPrice = math.floor((market.bid + farShift)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.min(farPrice, nearPrice + etc.maxSpread)
         farPrice = math.min(farPrice, market.maxPrice)
         local spread = farPrice - nearPrice
@@ -615,9 +625,9 @@ function strategy:calcEnterOp()
         end
         return 'B', nearPrice
     elseif market.trend < 0 then
-        local basePrice = math.max(market.fastPrice - maxBand, market.offer)
-        local nearPrice = math.ceil((basePrice + market.trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
-        local farPrice = math.ceil((market.offer + market.trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
+        local basePrice = math.max(market.fastPrice - confBand, market.offer)
+        local nearPrice = math.ceil((basePrice + nearShift)/etc.priceStepSize)*etc.priceStepSize
+        local farPrice = math.ceil((market.offer + farShift)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.max(farPrice, nearPrice - etc.maxSpread)
         farPrice = math.max(farPrice, market.minPrice)
         local spread = nearPrice - farPrice
@@ -685,7 +695,7 @@ function strategy:onMarketShift(l2)
             state.phase = PHASE_WAIT
         end
     else
-        local price = state.order.price + market.trend*etc.farForecast
+        local price = state.order.price + market.trend*etc.farForecast + market.trend2*math.pow(etc.farForecast, 2)/2
         if state.order:isActive() then
             local kill = false
             if state.order.operation == 'B' then
