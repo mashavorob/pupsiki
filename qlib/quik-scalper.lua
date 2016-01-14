@@ -23,7 +23,7 @@ local q_scalper = {
         -- Главные параметры, задаваемые в ручную
         asset = "RIH6",         -- бумага
         class = "SPBFUT",       -- класс
-        title = "qscalper",     -- заголовок таблицы
+        title = "qscalper - [RIH6]",     -- заголовок таблицы
 
         -- Параметры вычисляемые автоматически
         account = "SPBFUT005eC",
@@ -38,8 +38,10 @@ local q_scalper = {
         absPositionLimit = 1,   -- максимальная приемлемая позиция (абсолютное ограничение)
         relPositionLimit = 0.3, -- максимальная приемлемая позиция по отношению к размеру счета
 
-        avgFactorFast = 50,     -- "быстрый" коэффициент осреднения
-        avgFactorSlow = 200,    -- "медленный" коэфициент осреднения
+        maxLoss = 700,          -- максимальная приемлимая потеря
+
+        avgFactorFast = 30,     -- "быстрый" коэффициент осреднения
+        avgFactorSlow = 150,    -- "медленный" коэфициент осреднения
         avgFactorLot = 200,     -- коэффициент осреднения размера лота (сделки)
 
         maxImbalance = 5,       -- максимально приемлимый дисбаланс стакана против тренда
@@ -52,11 +54,10 @@ local q_scalper = {
         dealCost = 2,           -- биржевой сбор
         enterErrorThreshold = 1,-- предельная ошибка на входе (шагов цены)
         
-        confBand = 0.2,         -- "доверительный диапазон" (в среднеквадратических отклонениях)
-        trendThreshold = 0.25,  -- превышение величины тренда этого порога означает уверенный 
+        confBand = 0.5,         -- "доверительный диапазон" (в среднеквадратических отклонениях)
+        trendThreshold = 0.8,   -- превышение величины тренда этого порога означает уверенный 
                                 -- рост или снижение без вероятности скорого разворота
-                                -- TODO: расчитать дисперсию тренда, жесткий порог не работает при
-                                --       малых объемах торгов
+                                -- пороговое значение задается в стандартных отклонениях тренда
 
         params = {
             { name="avgFactorFast", min=1, max=1e32, step=1, precision=1e-4 },
@@ -73,12 +74,13 @@ local q_scalper = {
     },
 
     ui_mapping = {
-        { name="asset", title="Бумага", ctype=QTABLE_STRING_TYPE, width=8, format="%s" },
         { name="control", title="Упавление", ctype=QTABLE_STRING_TYPE, width=12, format="%s" },
         { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" },
         { name="trend", title="Трэнд", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.3f" },
+        { name="averages", title="Средние", ctype=QTABLE_STRING_TYPE, width=32, format="%s" },
+        { name="deviations", title="Ст. отклонения", ctype=QTABLE_STRING_TYPE, width=25, format="%s" },
+        { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=25, format="%s" },
         { name="spread", title="Cпред", ctype=QTABLE_STRING_TYPE, width=22, format="%s" },
-        { name="lotSize", title="Размер лота", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" },
         { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=40, format="%s" },
         { name="lastError", title="Результат последняя операции", ctype=QTABLE_STRING_TYPE, width=80, format="%s" }, 
     },
@@ -104,12 +106,14 @@ function q_scalper.create(etc)
         etc = config.create(q_scalper.etc),
         ui_mapping = q_scalper.ui_mapping,
         ui_state = {
-            asset = "--",
             position = 0,
             trend = "--",
             spread = "-- / --",
             status = "--",
+            balance = "-- / --",
             lastError = "--", 
+            averages = "-- / -- / --",
+            deviations = "-- / -- / --",
         },
         state = {
             halt = false,   -- immediate stop
@@ -119,6 +123,13 @@ function q_scalper.create(etc)
             phase = PHASE_WAIT,
 
             position = 0,
+
+            -- profit/loss
+            balance = {
+                atStart = 0,
+                maxValue = 0,
+                currValue = 0,
+            },
 
             -- market status
             market = {
@@ -131,11 +142,7 @@ function q_scalper.create(etc)
             },
 
             fastPrice = { },
-            fastTrend = { },
-
             slowPrice = { },
-            slowTrend = { },
-
             lotSize = { },
 
             order = { },
@@ -158,6 +165,10 @@ function q_scalper.create(etc)
     setmetatable(self, { __index = strategy })
 
     self.etc.limit = self:getLimit()
+    self.title = string.format( "%s - [%s]"
+                              , self.title
+                              , self.etc.asset
+                              )
 
     return self
 end
@@ -206,17 +217,16 @@ function strategy:init()
     self.etc.account = q_utils.getAccount() or self.etc.account
     self.etc.firmid = q_utils.getFirmID() or self.etc.firmid
 
-    self.state.fastPrice = q_avg.create(self.etc.avgFactorFast)
-    self.state.fastTrend = q_avg.create(self.etc.avgFactorFast)
+    local balance = q_utils.getBalance(self.etc.account)
+    self.state.balance.atStart = balance
+    self.state.balance.maxValue = balance
+    self.state.balance.currValue = balance
 
-    self.state.slowPrice = q_avg.create(self.etc.avgFactorSlow)
-    self.state.slowTrend = q_avg.create(self.etc.avgFactorSlow)
-
-    self.state.lotSize = q_avg.create(self.etc.avgFactorLot)
+    self.state.fastPrice = q_avg.createEx(self.etc.avgFactorFast, 2)
+    self.state.slowPrice = q_avg.createEx(self.etc.avgFactorSlow, 2)
+    self.state.lotSize = q_avg.createEx(self.etc.avgFactorLot, 1)
 
     self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-
-    self.ui_state.asset = self.etc.asset
 
     self.state.position = q_utils.getPos(self.etc.asset)
 
@@ -264,18 +274,15 @@ function strategy:init()
             }
 
             if bit.band(trade.flags, 1) ~= 0 then
-                l2.bid[1].price = l2.bid[1].price - self.etc.priceStepSize
+                l2.bid[1].price = l2.bid[1].price - 2*self.etc.priceStepSize
             else
-                l2.offer[1].price = l2.offer[1].price + self.etc.priceStepSize
+                l2.offer[1].price = l2.offer[1].price + 2*self.etc.priceStepSize
             end
 
             local price = (l2.bid[1].price + l2.offer[1].price)/2
 
             self.state.fastPrice:onValue(price)
-            self.state.fastTrend:onValue((price - self.state.fastPrice.average)*self.state.fastPrice.alpha)
-
             self.state.slowPrice:onValue(price)
-            self.state.slowTrend:onValue((price - self.state.slowPrice.average)*self.state.slowPrice.alpha)
 
             self:calcMarketParams(l2)
             self.state.lotSize:onValue(trade.qty)
@@ -319,17 +326,7 @@ function strategy:onAllTrade(trade)
     if trade.class_code ~= self.etc.class or trade.sec_code ~= self.etc.asset then
         return
     end
-
-    --[[self.state.fastPrice:onValue(trade.price)
-    self.state.fastTrend:onValue((trade.price - self.state.fastPrice.average)*self.state.fastPrice.alpha)
-
-    self.state.slowPrice:onValue(trade.price)
-    self.state.slowTrend:onValue((trade.price - self.state.slowPrice.average)*self.state.slowPrice.alpha)]]
-
     self.state.lotSize:onValue(trade.qty)
-
---    self:onMarketShift()
---    self:updateLabels()
 end
 
 local prevPrice = -1
@@ -345,19 +342,16 @@ function strategy:onQuote(class, asset)
     local offer = tonumber(l2.offer[1].price)
     local price = (bid + offer)/2
 
-    if price ~= prevPrice then
+    --if price ~= prevPrice then
         prevPrice = price
 
         self.state.fastPrice:onValue(price)
-        self.state.fastTrend:onValue((price - self.state.fastPrice.average)*self.state.fastPrice.alpha)
-
         self.state.slowPrice:onValue(price)
-        self.state.slowTrend:onValue((price - self.state.slowPrice.average)*self.state.slowPrice.alpha)
 
         self:updatePosition()
         self:onMarketShift(l2)
         self:updateLabels()
-    end
+    --end
 end
 
 function strategy:onIdle()
@@ -369,9 +363,29 @@ function strategy:onIdle()
 
     self:updatePosition()
 
+    local balance = q_utils.getBalance(self.etc.account)
+    state.balance.maxValue = math.max(state.balance.maxValue, balance)
+    state.balance.currValue = balance
+
+    ui_state.balance = string.format( "%.0f / %.0f"
+                                    , state.balance.currValue - state.balance.atStart
+                                    , state.balance.currValue - state.balance.maxValue
+                                    )
+
     ui_state.position = state.position
-    ui_state.trend = state.fastTrend.average
-    ui_state.lotSize = state.lotSize.average
+    ui_state.trend = state.fastPrice:getTrend()
+    ui_state.lotSize = state.lotSize:getAverage()
+    ui_state.averages = string.format( "%.2f / %.3f / %.4f"
+                                     , state.fastPrice:getAverage(0)
+                                     , state.fastPrice:getAverage(1)
+                                     , state.fastPrice:getAverage(2)
+                                     )
+
+    ui_state.deviations = string.format( "%.2f / %.3f / %.4f"
+                                       , state.fastPrice:getDeviation(0)
+                                       , state.fastPrice:getDeviation(1)
+                                       , state.fastPrice:getDeviation(2)
+                                       )
 
     if state.cancel then
         ui_state.control = "Ликвидация"
@@ -525,13 +539,13 @@ function strategy:calcMarketParams(l2)
     market.bid = l2.bid[l2.bid_count].price
     market.offer = l2.offer[1].price
 
-    local slowDeviation = state.slowPrice.deviation
-    local slowPrice = state.slowPrice.average + state.slowTrend.average/state.slowPrice.alpha
+    local slowDeviation = state.slowPrice:getDeviation()
+    local slowPrice = state.slowPrice:getAverage()
 
-    market.trend = state.fastTrend.average
+    market.trend = state.fastPrice:getTrend()
     market.maxPrice = slowPrice + slowDeviation
     market.minPrice = slowPrice - slowDeviation
-    if market.trend > etc.trendThreshold then
+    if market.trend > etc.trendThreshold*state.fastPrice:getTrendDeviation() then
         market.minPrice = market.minPrice + slowDeviation*(1 - etc.confBand)
     elseif market.trend < -etc.trendThreshold then
         market.maxPrice = market.maxPrice - slowDeviation*(1 - etc.confBand)
@@ -539,7 +553,7 @@ function strategy:calcMarketParams(l2)
     market.maxPrice = math.floor(market.maxPrice/etc.priceStepSize)*etc.priceStepSize
     market.minPrice = math.ceil(market.minPrice/etc.priceStepSize)*etc.priceStepSize
 
-    market.fastPrice = state.fastPrice.average + state.fastTrend.average/state.fastPrice.alpha
+    market.fastPrice = state.fastPrice:getAverage()
 end
 
 -- function returns operation, price
@@ -549,8 +563,8 @@ function strategy:calcEnterOp()
     local state = self.state
     local market = state.market
     local offerVol, demandVol = self:calcOfferDemand(l2)
-    local confBand = state.fastPrice.deviation*etc.confBand
-    local maxBand = state.fastPrice.deviation
+    local confBand = state.fastPrice:getDeviation()*etc.confBand
+    local maxBand = state.fastPrice:getDeviation()
     local mean = (market.bid + market.offer)/2
 
     self.ui_state.spread = "-- / -- (--)"
@@ -560,34 +574,35 @@ function strategy:calcEnterOp()
             self.ui_state.state = "Неблагоприятный дисбаланс"
             return
         end
-        if mean > market.fastPrice + confBand then
-            if mean < market.fastPrice + maxBand then
-                self.ui_state.state = "Неблагоприятное отклонение"
-                return 'W'
-            else
-                self.ui_state.state = "Сильное отклонение"
-                return
-            end
+        if mean > market.fastPrice + maxBand then
+            self.ui_state.state = "Неблагоприятное отклонение"
+            return 'W'
         end
     end
+
     if market.trend < 0 then
         if demandVol/offerVol >= etc.maxImbalance then
             self.ui_state.state = "Неблагоприятный дисбаланс"
             return
         end
-        if mean < market.fastPrice - confBand then
-            if mean > market.fastPrice - maxBand then
-                self.ui_state.state = "Неблагоприятное отклонение"
-                return 'W'
-            else
-                self.ui_state.state = "Сильное отклонение"
-                return
-            end
+        if mean < market.fastPrice - maxBand then
+            self.ui_state.state = "Неблагоприятное отклонение"
+            return 'W'
         end
     end
 
+    local loss = state.balance.maxValue - state.balance.currValue
+    if loss > etc.maxLoss then
+        self.ui_state.state = string.format( "Превышение убытка (%.0f из %0f)"
+                                           , loss
+                                           , etc.maxLoss
+                                           )
+        return
+    end
+
     if market.trend > 0 then
-        local nearPrice = math.floor((market.bid + market.trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
+        local basePrice = math.min(market.fastPrice + maxBand, market.bid)
+        local nearPrice = math.floor((basePrice + market.trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
         local farPrice = math.floor((market.bid + market.trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.min(farPrice, nearPrice + etc.maxSpread)
         farPrice = math.min(farPrice, market.maxPrice)
@@ -600,7 +615,8 @@ function strategy:calcEnterOp()
         end
         return 'B', nearPrice
     elseif market.trend < 0 then
-        local nearPrice = math.ceil((market.offer + market.trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
+        local basePrice = math.max(market.fastPrice - maxBand, market.offer)
+        local nearPrice = math.ceil((basePrice + market.trend*etc.nearForecast)/etc.priceStepSize)*etc.priceStepSize
         local farPrice = math.ceil((market.offer + market.trend*etc.farForecast)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.max(farPrice, nearPrice - etc.maxSpread)
         farPrice = math.max(farPrice, market.minPrice)

@@ -23,6 +23,16 @@ function q_utils.getMoneyLimit(account)
     end
 end
 
+function q_utils.getBalance(account)
+    local n = getNumberOf("futures_client_limits")
+    for i = 0, n - 1 do
+        local row = getItem("futures_client_limits", i)
+        if row.trdaccid == account then
+            return row.cbplimit + row.varmargin + row.accruedint
+        end
+    end
+end
+
 function q_utils.getPos(asset)
     local n = getNumberOf("futures_client_holding")
     for i = 0,n-1 do
