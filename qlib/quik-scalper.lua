@@ -217,7 +217,7 @@ function strategy:init()
     self.state.balance.currValue = balance
 
     self.state.fastPrice = q_avg.createEx(self.etc.avgFactorFast, 2)
-    self.state.slowPrice = q_avg.createEx(self.etc.avgFactorSlow, 2)
+    self.state.slowPrice = q_avg.createEx(self.etc.avgFactorSlow, 0)
     self.state.lotSize = q_avg.createEx(self.etc.avgFactorLot, 0)
 
     self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
@@ -561,7 +561,8 @@ function strategy:calcEnterOp()
 
     local nearShift = market.trend*etc.nearForecast + market.trend2*math.pow(etc.nearForecast, 2)/2
     local farShift = market.trend*etc.farForecast + market.trend2*math.pow(etc.farForecast, 2)/2
-    if market.trend > 0 then
+    local trendThreshold = state.fastPrice:getDeviation(1)*etc.confBand
+    if market.trend > trendThreshold then
         local basePrice = math.min(market.fastPrice + confBand, market.bid)
         local nearPrice = math.floor((basePrice + nearShift)/etc.priceStepSize)*etc.priceStepSize
         local farPrice = math.floor((market.bid + farShift)/etc.priceStepSize)*etc.priceStepSize
@@ -575,7 +576,7 @@ function strategy:calcEnterOp()
             return
         end
         return 'B', nearPrice
-    elseif market.trend < 0 then
+    elseif market.trend < -trendThreshold then
         local basePrice = math.max(market.fastPrice - confBand, market.offer)
         local nearPrice = math.ceil((basePrice + nearShift)/etc.priceStepSize)*etc.priceStepSize
         local farPrice = math.ceil((market.offer + farShift)/etc.priceStepSize)*etc.priceStepSize
@@ -617,6 +618,9 @@ function strategy:onMarketShift(l2)
     if state.order:isPending() then
         self.ui_state.state = "Отправка заявки"
         return
+    end
+    if state.order:isActive() then
+        self.ui_state.state = "Ожидание исполнения заявки"
     end
 
     if state.position == 0 then
@@ -663,8 +667,6 @@ function strategy:onMarketShift(l2)
                 local res, err = state.order:kill()
                 self:checkStatus(res, err)
                 state.phase = PHASE_PRICE_CHANGE
-            else
-                self.ui_state.state = "Ожидание исполнения заявки"
             end
         elseif state.position > 0 then
             if state.order.price + etc.minSpread <= market.offer - etc.priceStepSize then
