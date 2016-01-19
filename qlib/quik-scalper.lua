@@ -34,13 +34,13 @@ local q_scalper = {
         maxSpread = 2,          -- максимальный спрэд
 
         -- Параметры задаваемые вручную
-        absPositionLimit = 1,   -- максимальная приемлемая позиция (абсолютное ограничение)
-        relPositionLimit = 0.3, -- максимальная приемлемая позиция по отношению к размеру счета
+        absPositionLimit = 3,   -- максимальная приемлемая позиция (абсолютное ограничение)
+        relPositionLimit = 0.5, -- максимальная приемлемая позиция по отношению к размеру счета
 
-        maxLoss = 700,          -- максимальная приемлимая потеря
+        maxLoss = 3000,          -- максимальная приемлимая потеря
 
         avgFactorFast = 70,     -- "быстрый" коэффициент осреднения
-        avgFactorSlow = 200,    -- "медленный" коэфициент осреднения
+        avgFactorSlow = 300,    -- "медленный" коэфициент осреднения
         avgFactorLot = 200,     -- коэффициент осреднения размера лота (сделки)
 
         maxImbalance = 5,       -- максимально приемлимый дисбаланс стакана против тренда
@@ -53,8 +53,9 @@ local q_scalper = {
         dealCost = 2,           -- биржевой сбор
         enterErrorThreshold = 1,-- предельная ошибка на входе (шагов цены)
         
-        confBand = 0.5,         -- "доверительный диапазон" (в среднеквадратических отклонениях)
-        trendThreshold = 0.8,   -- превышение величины тренда этого порога означает уверенный 
+        confBandSlow = 0.5,     -- "доверительный диапазон" (мин/макс цена, в среднеквадратических отклонениях)
+        confBandFast = 0.7,     -- "доверительный диапазон" (макс. отклонение от средней цены в среднеквадратических отклонениях) 
+        trendThreshold = 0.5,   -- превышение величины тренда этого порога означает уверенный 
                                 -- рост или снижение без вероятности скорого разворота
                                 -- пороговое значение задается в стандартных отклонениях тренда
                                 --
@@ -65,7 +66,7 @@ local q_scalper = {
         -- расписание работы
         schedule = {
             { from = { hour=10, min=01, sec=00 }, to = { hour=12, min=55, sec=00 } }, -- 10:01 - 12:55
-            { from = { hour=13, min=01, sec=00 }, to = { hour=13, min=55, sec=00 } }, -- 13:01 - 13:55
+            { from = { hour=13, min=05, sec=00 }, to = { hour=13, min=55, sec=00 } }, -- 13:01 - 13:55
             { from = { hour=14, min=16, sec=00 }, to = { hour=15, min=45, sec=00 } }, -- 14:16 - 15:45
             { from = { hour=16, min=01, sec=00 }, to = { hour=18, min=55, sec=00 } }, -- 16:01 - 18:55
             { from = { hour=19, min=01, sec=00 }, to = { hour=21, min=55, sec=00 } }, -- 19:01 - 21:55
@@ -73,14 +74,13 @@ local q_scalper = {
     },
 
     ui_mapping = {
-        { name="control", title="Упавление", ctype=QTABLE_STRING_TYPE, width=12, format="%s" },
         { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" },
         { name="trend", title="Трэнд", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.3f" },
         { name="spread", title="Cпред", ctype=QTABLE_STRING_TYPE, width=22, format="%s" },
+        { name="minmax", title="Мин/Макс цена", ctype=QTABLE_STRING_TYPE, width=25, format="%s" },
+        { name="volume", title="Объем: Покупка/Продажа/Всего", ctype=QTABLE_STRING_TYPE, width=35, format="%s" },
         { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=25, format="%s" },
-        { name="averages", title="Средние", ctype=QTABLE_STRING_TYPE, width=32, format="%s" },
-        { name="deviations", title="Ст. отклонения", ctype=QTABLE_STRING_TYPE, width=25, format="%s" },
-        { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=40, format="%s" },
+        { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=60, format="%s" },
         { name="lastError", title="Результат последняя операции", ctype=QTABLE_STRING_TYPE, width=80, format="%s" }, 
     },
 }
@@ -89,14 +89,15 @@ _G["quik-scalper"] = q_scalper
 
 local strategy = {}
 
-local PHASE_WAIT            = 0
-local PHASE_ENTER           = 1
-local PHASE_CLOSE           = 2
-local PHASE_PRICE_CHANGE    = 3
-local PHASE_CANCEL          = 4
+local PHASE_INIT            = 1
+local PHASE_WAIT            = 2
+local PHASE_HOLD            = 3
+local PHASE_CLOSE           = 4
+local PHASE_PRICE_CHANGE    = 5
+local PHASE_CANCEL          = 6
 
-local MAX_LABELS = 100
-local INTERVAL = 60
+local HISTORY_TO_ANALYSE    = 30000
+local MIN_HISTORY           = 1000
 
 function q_scalper.create(etc)
 
@@ -108,18 +109,18 @@ function q_scalper.create(etc)
             position = 0,
             trend = "--",
             spread = "-- / -- (--)",
-            status = "--",
+            minmax = "-- / --",
+            volume = "-- / -- / -- (--)",
             balance = "-- / --",
+            state = "--",
             lastError = "--", 
-            averages = "-- / -- / --",
-            deviations = "-- / -- / --",
         },
         state = {
             halt = false,   -- immediate stop
             pause = true,   -- temporary stop
             cancel = true,  -- closing current position
 
-            phase = PHASE_WAIT,
+            phase = PHASE_INIT,
 
             position = 0,
 
@@ -152,8 +153,13 @@ function q_scalper.create(etc)
             fastPrice = { },
             slowPrice = { },
             lotSize = { },
+            buyVolume = { },
+            sellVolume = { },
+            absVolume = { },
+            summVolume = { },
 
             order = { },
+            state = "--",
         },
     }
 
@@ -226,8 +232,12 @@ function strategy:init()
     self.state.balance.currValue = balance
 
     self.state.fastPrice = q_avg.createEx(self.etc.avgFactorFast, 2)
-    self.state.slowPrice = q_avg.createEx(self.etc.avgFactorSlow, 0)
+    self.state.slowPrice = q_avg.createEx(self.etc.avgFactorSlow, 1)
     self.state.lotSize = q_avg.createEx(self.etc.avgFactorLot, 0)
+    self.state.sellVolume = q_avg.createEx(self.etc.avgFactorFast, 1)
+    self.state.buyVolume = q_avg.createEx(self.etc.avgFactorFast, 1)
+    self.state.absVolume = q_avg.createEx(self.etc.avgFactorFast, 1)
+    self.state.summVolume = q_avg.createEx(self.etc.avgFactorFast, 1)
 
     self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
 
@@ -236,28 +246,13 @@ function strategy:init()
     self:updateParams()
 
     -- walk through all trade
-    local first = 0
-    local last = getNumberOf("all_trades")
-    assert(last > 0, "Таблица всех сделок пустая, старт невозможен\n" .. debug.traceback())
-    local n = last
-    local d = getItem("all_trades", last - 1).datetime
-    local startTime = os.time(d) - INTERVAL*MAX_LABELS
-
-    while first < last - 2 do
-        local m = math.floor((first + last)/2)
-        local trade = getItem("all_trades", m)
-        local tm = os.time(trade.datetime)
-        if tm < startTime then
-            first = m
-        elseif tm > startTime then
-            last = m
-        else
-            first = m
-            last = m
-        end
-    end
+    local n = getNumberOf("all_trades")
+    local first = math.max(0, n - HISTORY_TO_ANALYSE)
+    assert(n > 0, "Таблица всех сделок пустая, старт невозможен\n")
+    assert(n - first > MIN_HISTORY, "Недостаточно исторических данных, старт невозможен\n")
     
     self.state.lotSize:onValue(1)
+    self.state.phase = PHASE_INIT
 
     for i = first, n - 1 do
         local trade = getItem("all_trades", i)
@@ -279,21 +274,25 @@ function strategy:init()
             }
 
             if bit.band(trade.flags, 1) ~= 0 then
-                l2.bid[1].price = l2.bid[1].price - 2*self.etc.priceStepSize
-            else
+                -- сделка на продажу
                 l2.offer[1].price = l2.offer[1].price + 2*self.etc.priceStepSize
+            else
+                -- сделка на покупку
+                l2.bid[1].price = l2.bid[1].price - 2*self.etc.priceStepSize
             end
 
             local price = (l2.bid[1].price + l2.offer[1].price)/2
 
             self.state.fastPrice:onValue(price)
             self.state.slowPrice:onValue(price)
+            self.state.lotSize:onValue(trade.qty)
 
             self:calcMarketParams(l2)
-            self.state.lotSize:onValue(trade.qty)
         end
     end
     Subscribe_Level_II_Quotes(self.etc.class, self.etc.asset)
+    self.state.phase = PHASE_WAIT
+    self:calcPlannedPos()
 end
 
 function strategy:updatePosition()
@@ -321,26 +320,30 @@ end
 
 function strategy:onTrade(trade)
     q_order.onTrade(trade)
-    self:updatePosition()
-    --self:onMarketShift()
 end
+
+local sellVolume = 0
+local buyVolume = 0
 
 function strategy:onAllTrade(trade)
     if trade.class_code ~= self.etc.class or trade.sec_code ~= self.etc.asset then
         return
     end
     self.state.lotSize:onValue(trade.qty)
+    if bit.band(trade.flags, 1) ~= 0 then
+        -- продажа
+        sellVolume = sellVolume + trade.qty
+    else
+        -- покупка
+        buyVolume = buyVolume + trade.qty
+    end
 end
 
 local prevPrice = -1
 
-function strategy:onQuote(class, asset)
-    if class ~= self.etc.class or asset ~= self.etc.asset then
-        return
-    end
-
+function strategy:checkPrice()
     local l2 = self:getQuoteLevel2()
-    if not l2.bid or not l2.offer then
+    if l2.bid_count <= 1 or l2.offer_count <= 1 then
         return
     end
 
@@ -354,8 +357,27 @@ function strategy:onQuote(class, asset)
         self.state.fastPrice:onValue(price)
         self.state.slowPrice:onValue(price)
 
+        self:calcMarketParams(l2)
+
+        self.state.sellVolume:onValue(sellVolume)
+        self.state.buyVolume:onValue(buyVolume)
+        self.state.absVolume:onValue(buyVolume + sellVolume)
+        self.state.summVolume:onValue(buyVolume - sellVolume)
+        sellVolume = 0
+        buyVolume = 0
+        
+        return true
+    end
+end
+
+function strategy:onQuote(class, asset)
+    if class ~= self.etc.class or asset ~= self.etc.asset then
+        return
+    end
+
+    if self:checkPrice() then
         self:updatePosition()
-        self:onMarketShift(l2)
+        self:onMarketShift()
     end
 end
 
@@ -363,46 +385,16 @@ function strategy:onIdle()
     q_order.onIdle()
     self:updatePosition()
 
+    if self:checkPrice() then
+        self:onMarketShift()
+    end
+
     local state = self.state
     local ui_state = self.ui_state
 
-    local balance = q_utils.getBalance(self.etc.account)
-    state.balance.maxValue = math.max(state.balance.maxValue, balance)
-    state.balance.currValue = balance
-
-    ui_state.balance = string.format( "%.0f / %.0f"
-                                    , state.balance.currValue - state.balance.atStart
-                                    , state.balance.currValue - state.balance.maxValue
-                                    )
-
-    ui_state.position = state.position
-    ui_state.trend = state.fastPrice:getTrend()
-    ui_state.lotSize = state.lotSize:getAverage()
-    ui_state.averages = string.format( "%.2f / %.3f / %.4f"
-                                     , state.fastPrice:getAverage(0)
-                                     , state.fastPrice:getAverage(1)
-                                     , state.fastPrice:getAverage(2)
-                                     )
-
-    ui_state.deviations = string.format( "%.2f / %.3f / %.4f"
-                                       , state.fastPrice:getDeviation(0)
-                                       , state.fastPrice:getDeviation(1)
-                                       , state.fastPrice:getDeviation(2)
-                                       )
-
-    local plannedPos = state.plannedPos
-    if plannedPos.buyPrice and plannedPos.sellPrice then
-        ui_state.spread = string.format( "%.0f / %.0f (%.0f)"
-                                       , plannedPos.buyPrice
-                                       , plannedPos.sellPrice
-                                       , plannedPos.sellPrice - plannedPos.buyPrice
-                                       )
-    else
-        ui_state.spread = "-- / -- (--)"
-    end
-
+    -- kill position
     if state.cancel then
-        ui_state.control = "Ликвидация"
+        ui_state.state = "Ликвидация"
 
         local active = state.order:isActive() or state.order:isPending()
 
@@ -413,7 +405,7 @@ function strategy:onIdle()
 
         if not active then
             if state.position ~= 0 and not self:checkSchedule() then
-                ui_state.state = "Закрытие позиции: перерыв"
+                state.state = "Закрытие позиции: перерыв"
             elseif state.position > 0 then
                 self.etc.minPrice = tonumber(getParamEx(self.etc.class, self.etc.asset, "PRICEMIN").param_value)
                 assert(self.etc.minPrice > 0, "Неверная минимальная цена: " .. self.etc.minPrice .. "\n" .. debug.traceback())
@@ -434,19 +426,59 @@ function strategy:onIdle()
             end
         end
     end
-    if state.pause then
-        ui_state.control = "Пауза"
-    elseif state.halt then
-        ui_state.control = "Остановка"
-    elseif not self:checkSchedule() then
-        ui_state.control = "Остановка по расписанию"
+
+    ui_state.position = state.position
+    ui_state.trend = state.fastPrice:getTrend()
+    local plannedPos = state.plannedPos
+    if plannedPos.buyPrice and plannedPos.sellPrice then
+        ui_state.spread = string.format( "%s %.0f / %.0f (%.0f)"
+                                       , plannedPos.op or 'N'
+                                       , plannedPos.buyPrice
+                                       , plannedPos.sellPrice
+                                       , plannedPos.sellPrice - plannedPos.buyPrice
+                                       )
     else
-        ui_state.control = "Работа"
+        ui_state.spread = "-- / -- (--)"
     end
+    ui_state.minmax = string.format( "%.0f / %.0f"
+                                   , state.market.minPrice
+                                   , state.market.maxPrice
+                                   )
+    ui_state.volume = string.format( "%.3f / %.3f / %.3f (%.3f)"
+                                   , state.buyVolume:getAverage()
+                                   , state.sellVolume:getAverage()
+                                   , state.absVolume:getAverage()
+                                   , state.summVolume:getAverage()
+                                   )
+                                   
+    local balance = q_utils.getBalance(self.etc.account)
+    state.balance.maxValue = math.max(state.balance.maxValue, balance)
+    state.balance.currValue = balance
+
+    ui_state.balance = string.format( "%.0f / %.0f"
+                                    , state.balance.currValue - state.balance.atStart
+                                    , state.balance.currValue - state.balance.maxValue
+                                    )
+
+    if state.order:isPending() then
+        ui_state.state = "Отправка заявки (" .. state.state .. ")"
+    elseif state.order:isActive() then
+        ui_state.state = "Ожидание исполнения заявки (" .. state.state .. ")"
+    elseif state.pause then
+        ui_state.state = "Пауза"
+    elseif state.halt then
+        ui_state.state = "Остановка"
+    elseif not self:checkSchedule() then
+        ui_state.state = "Остановка по расписанию"
+    else
+        ui_state.state = state.state
+    end
+
+    ui_state.lotSize = state.lotSize:getAverage()
+
+    local plannedPos = state.plannedPos
     ui_state.lastError = "--"
 end
-
-local lastTime = 0
 
 function strategy:getQuoteLevel2()
     local l2 = getQuoteLevel2(self.etc.class, self.etc.asset)
@@ -520,24 +552,26 @@ function strategy:calcMarketParams(l2)
 
     local slowDeviation = state.slowPrice:getDeviation()
     local slowPrice = state.slowPrice:getAverage()
+    local bandShift = slowDeviation*(1 - etc.confBandSlow)
+    local trendThreshold = etc.trendThreshold*state.fastPrice:getTrendDeviation()
 
     market.trend = state.fastPrice:getTrend()
     market.trend2 = state.fastPrice:getTrend2()
 
     market.maxPrice = slowPrice + slowDeviation
     market.minPrice = slowPrice - slowDeviation
-    if market.trend > etc.trendThreshold*state.fastPrice:getTrendDeviation() then
-        market.minPrice = market.minPrice + slowDeviation*(1 - etc.confBand)
-    elseif market.trend < -etc.trendThreshold then
-        market.maxPrice = market.maxPrice - slowDeviation*(1 - etc.confBand)
+    if market.trend > trendThreshold then
+        market.minPrice = market.minPrice + bandShift 
+    --    market.maxPrice = market.maxPrice + bandShift 
+    elseif market.trend < -trendThreshold then
+        market.maxPrice = market.maxPrice - bandShift
+      --  market.minPrice = market.minPrice - bandShift
     end
     market.maxPrice = math.floor(market.maxPrice/etc.priceStepSize)*etc.priceStepSize
     market.minPrice = math.ceil(market.minPrice/etc.priceStepSize)*etc.priceStepSize
 
     market.fastPrice = state.fastPrice:getAverage()
 end
-
-local noWayToEnter = {op = false, buyPrice = false, sellPrice = false}
 
 -- function returns operation, price
 function strategy:calcPlannedPos()
@@ -546,93 +580,76 @@ function strategy:calcPlannedPos()
     local state = self.state
     local market = state.market
     local offerVol, demandVol = self:calcOfferDemand(l2)
-    local confBand = state.fastPrice:getDeviation()*etc.confBand
+    local confBand = state.fastPrice:getDeviation()*etc.confBandFast
     local maxBand = state.fastPrice:getDeviation()
     local mean = (market.bid + market.offer)/2
 
-    self.ui_state.spread = "-- / -- (--)"
-
     local loss = state.balance.maxValue - state.balance.currValue
     if loss > etc.maxLoss then
-        self.ui_state.state = string.format( "Превышение убытка (%.0f из %0f)"
+        self.state.state = string.format( "Превышение убытка (%.0f из %0f)"
                                            , loss
                                            , etc.maxLoss
                                            )
-        state.plannedPos = noWayToEnter
+        state.plannedPos.op = false
         return
-    end
-
-    if market.trend > 0 then
-        if offerVol/demandVol >= etc.maxImbalance then
-            self.ui_state.state = "Неблагоприятный дисбаланс"
-            state.plannedPos = noWayToEnter
-            return
-        end
-        if mean > market.fastPrice + maxBand then
-            self.ui_state.state = "Неблагоприятное отклонение"
-            -- do not change planned position
-            return
-        end
-    end
-
-    if market.trend < 0 then
-        if demandVol/offerVol >= etc.maxImbalance then
-            self.ui_state.state = "Неблагоприятный дисбаланс"
-            state.plannedPos = noWayToEnter
-            return
-        end
-        if mean < market.fastPrice - maxBand then
-            self.ui_state.state = "Неблагоприятное отклонение"
-            -- do not change planned position
-            return
-        end
     end
 
     local nearShift = market.trend*etc.nearForecast + market.trend2*math.pow(etc.nearForecast, 2)/2
     local farShift = market.trend*etc.farForecast + market.trend2*math.pow(etc.farForecast, 2)/2
-    local trendThreshold = state.fastPrice:getDeviation(1)*etc.confBand
-    if market.trend > trendThreshold then
-        local basePrice = math.min(market.fastPrice + confBand, market.bid)
+    local trendThreshold = state.fastPrice:getDeviation(1)*etc.trendThreshold
+    if market.trend >= 0 then
+        local basePrice = math.min(mean, market.fastPrice)
         local nearPrice = math.floor((basePrice + nearShift)/etc.priceStepSize)*etc.priceStepSize
-        local farPrice = math.floor((market.bid + farShift)/etc.priceStepSize)*etc.priceStepSize
+        local farPrice = math.ceil((basePrice + farShift)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.min(farPrice, nearPrice + etc.maxSpread)
         farPrice = math.min(farPrice, market.maxPrice)
         state.plannedPos = { op = 'B', buyPrice = nearPrice, sellPrice = farPrice }
-    elseif market.trend < -trendThreshold then
-        local basePrice = math.max(market.fastPrice - confBand, market.offer)
+    else
+        local basePrice = math.max(mean, market.fastPrice)
         local nearPrice = math.ceil((basePrice + nearShift)/etc.priceStepSize)*etc.priceStepSize
-        local farPrice = math.ceil((market.offer + farShift)/etc.priceStepSize)*etc.priceStepSize
+        local farPrice = math.ceil((basePrice + farShift)/etc.priceStepSize)*etc.priceStepSize
         farPrice = math.max(farPrice, nearPrice - etc.maxSpread)
         farPrice = math.max(farPrice, market.minPrice)
-        state.plannedPos = { op = 'B', buyPrice = farPrice, sellPrice = nearPrice }
-    else
-        state.plannedPos = noWayToEnter
+        state.plannedPos = { op = 'S', buyPrice = farPrice, sellPrice = nearPrice }
     end
 
     if state.plannedPos.op then
         local spread = state.plannedPos.sellPrice - state.plannedPos.buyPrice
         local profit = spread/etc.priceStepSize*etc.priceStepValue - etc.dealCost*2
         if (profit <= 0) or (spread < etc.minSpread) then
-            self.ui_state.state = "Мониторинг"
+            self.state.state = "Мониторинг"
             -- spread is not good enough to make profit 
+            state.plannedPos.op = false
+        elseif math.abs(market.trend) < trendThreshold then
+            self.state.state = "Не выраженный тренд"
             state.plannedPos.op = false
         end
     end
+
+    if market.trend >= 0 and offerVol/demandVol >= etc.maxImbalance then
+        self.state.state = "Неблагоприятный дисбаланс"
+        state.plannedPos.op = false
+    elseif market.trend < 0 and demandVol/offerVol >= etc.maxImbalance then
+        self.state.state = "Неблагоприятный дисбаланс"
+        state.plannedPos.op = false
+    end
+    
     if not self:checkSchedule() then
         state.plannedPos.op = false
+        self.state.state = "Перерыв"
     end
 end
 
-function strategy:onMarketShift(l2)
+function strategy:onMarketShift()
 
-    l2 = l2 or self:getQuoteLevel2()
-
-    -- when clearing is in progress l2 data might be empty
-    if l2.bid_count <= 1 or l2.offer_count <= 1 then
-        return
-    end
+    local etc = self.etc
+    local state = self.state
+    local market = state.market
     
-    self:calcMarketParams(l2)
+    -- pre update phases
+    if state.phase == PHASE_HOLD and not state.order:isActive() then
+        state.phase = PHASE_CLOSE
+    end
 
     if state.phase >= PHASE_CLOSE and
        not state.order:isPending() and
@@ -641,61 +658,55 @@ function strategy:onMarketShift(l2)
     then
         state.phase = PHASE_WAIT
     end
+    
+    if state.phase == PHASE_WAIT and state.position ~= 0 and not state.order:isActive() then
+        state.phase = PHASE_CLOSE
+    end
 
-    -- calculate enter price and operation
-    if state.phase == PHASE_WAIT or state.phase == PHASE_ENTER then
+    -- check halts and pending orders
+    if self.state.halt or self.state.cancel or self.state.pause or state.order:isPending() then
+        return
+    end
+
+    if state.phase == PHASE_WAIT then
+
+        -- calculate enter price and operation
         self:calcPlannedPos()
-    end
 
-    local etc = self.etc
-    local state = self.state
-    local market = state.market
-
-    if self.state.halt or self.state.cancel or self.state.pause then
-        return
-    end
-
-    if state.order:isPending() then
-        self.ui_state.state = "Отправка заявки"
-        return
-    end
-    if state.order:isActive() then
-        self.ui_state.state = "Ожидание исполнения заявки"
-    end
-
-    if state.phase == PHASE_WAIT or state.phase == PHASE_ENTER then
         if state.order:isActive() then
             local maxError = etc.enterErrorThreshold*etc.priceStepValue
+            local enterPrice = state.plannedPos.op == 'B' and state.plannedPos.buyPrice or state.plannedPos.sellPrice
+                
             if not state.plannedPos.op or 
                 state.order.operation ~= state.plannedPos.op or 
                 math.abs(enterPrice - state.order.price) >= maxError
+                or state.position ~= 0 and ( 
+                    state.order.operation == 'B' and (market.offer > state.order.price + etc.priceStepSize) or
+                    state.order.operation == 'S' and (market.bid < state.order.price - etc.priceStepSize)
+                )
             then
-                state.phase = PHASE_CLOSE
-                self.ui_state.state = "Изменение цены входа"
+                state.phase = PHASE_HOLD
+                self.state.state = "Изменение цены входа"
                 local res, err = state.order:kill()
                 self:checkStatus(res, err)
                 return
             end
         elseif state.plannedPos.op then
-            state.phase = PHASE_ENTER
             local price, res, err = false, true, ""
             
             if state.plannedPos.op == 'B' then
-                self.ui_state.state = "Отправка заявки на вход в лонг"
+                self.state.state = "Открытие лонг"
                 res, err = state.order:send('B', state.plannedPos.buyPrice, self:getLimit())
             elseif state.plannedPos.op == 'S' then
-                self.ui_state.state = "Отправка заявки на вход в шорт"
+                self.state.state = "Открытие шорт"
                 res, err = state.order:send('S', state.plannedPos.sellPrice, self:getLimit())
             else
                 res, err = false, "Запланирована недопустимая операция: " .. state.plannedPos.op .. 
                   string.format("(покупка: %.0f, продажа: %.0f)", state.plannedPos.buyPrice, state.plannedPos.sellPrice)
             end
             self:checkStatus(res, err)
-        else
-            state.phase = PHASE_WAIT
         end
-    else
-        local price = state.order.price + market.trend*etc.farForecast + market.trend2*math.pow(etc.farForecast, 2)/2
+    elseif state.phase == PHASE_CLOSE then
         if state.order:isActive() then
             local kill = false
             if state.order.operation == 'B' then
@@ -708,42 +719,64 @@ function strategy:onMarketShift(l2)
                 end
             end
             if kill then
-                self.ui_state.state = "Изменение цены"
+                self.state.state = "Изменение цены"
                 local res, err = state.order:kill()
                 self:checkStatus(res, err)
                 state.phase = PHASE_PRICE_CHANGE
             end
         elseif state.position > 0 then
-            if state.order.price + etc.minSpread <= market.offer - etc.priceStepSize then
-                price = market.offer - etc.priceStepSize
+            local price = state.order.price + market.trend*etc.farForecast + market.trend2*math.pow(etc.farForecast, 2)/2 
+            if state.order.price + etc.minSpread < market.offer then
+                price = math.max(state.order.price + etc.minSpread, market.offer - etc.priceStepSize)
             else
                 price = math.floor(price/etc.priceStepSize)*etc.priceStepSize
                 price = math.max(price, state.order.price + etc.minSpread)
-                price = math.min(price, state.order.price + etc.maxSpread)
             end
+            price = math.min(price, state.order.price + etc.maxSpread)
             price = math.min(price, market.maxPrice)
-            if state.phase == PHASE_PRICE_CHANGE then
-                price = market.bid
-            end
-            state.phase = PHASE_CLOSE
-            self.ui_state.state = "Отправка заявки на закрытие"
+            self.state.state = "Закрытие позиции"
             local res, err = state.order:send('S', price, state.position)
             self:checkStatus(res, err)
         else -- position is strictly negative
-            if state.order.price - etc.minSpread >= market.bid + etc.priceStepSize then
-                price = market.bid + etc.priceStepSize
+            local price = state.order.price + market.trend*etc.farForecast + market.trend2*math.pow(etc.farForecast, 2)/2 
+            if state.order.price - etc.minSpread > market.bid then
+                price = math.min(state.order.price - etc.minSpread, market.bid + etc.priceStepSize)
             else
                 price = math.ceil(price/etc.priceStepSize)*etc.priceStepSize
                 price = math.min(price, state.order.price - etc.minSpread)
-                price = math.max(price, state.order.price - etc.maxSpread)
             end
+            price = math.max(price, state.order.price - etc.maxSpread)
             price = math.max(price, market.minPrice)
-            if state.phase == PHASE_PRICE_CHANGE then
-                price = market.offer
-            end
-            state.phase = PHASE_CLOSE
-            self.ui_state.state = "Отправка заявки на закрытие"
+            self.state.state = "Закрытие позиции"
             local res, err = state.order:send('B', price, -state.position)
+            self:checkStatus(res, err)
+        end
+    elseif state.phase == PHASE_PRICE_CHANGE then
+        if state.order:isActive() then
+            local maxPrice = market.offer + state.fastPrice:getDeviation()/2
+            local minPrice = market.bid - state.fastPrice:getDeviation()/2
+            local kill = false
+            if state.order.operation == 'B' then
+                if state.order.price < minPrice then
+                    kill = true
+                end
+            elseif state.order.operation == 'S' then
+                if state.order.price > maxPrice then
+                    kill = true
+                end
+            end
+            if kill then
+                self.state.state = "Изменение цены"
+                local res, err = state.order:kill()
+                self:checkStatus(res, err)
+            end
+        else
+            local res, err = true, ""
+            if state.position > 0 then
+                res, err = state.order:send('S', market.bid, state.position)
+            elseif state.position < 0 then
+                res, err = state.order:send('B', market.offer, -state.position)
+            end
             self:checkStatus(res, err)
         end
     end
@@ -756,8 +789,8 @@ end
 function strategy:checkStatus(status, err)
     if not status then
         assert(err, "err is nil\n" .. debug.traceback())
-        self.ui_state.lastError = self.ui_state.status .. ": Ошибка: " .. err
-        self.ui_state.status = "Приостановка (" .. self.ui_state.status .. ")"
+        self.state.lastError = "Ошибка: " .. err
+        self.state.state = "Приостановка (" .. self.state.state .. ")"
         self.state.halt = true
         return false
     end    
