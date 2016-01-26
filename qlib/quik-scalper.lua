@@ -53,11 +53,13 @@ local q_scalper = {
         dealCost = 2,                   -- биржевой сбор
         enterErrorThreshold = 1,        -- предельная ошибка на входе (шагов цены)
         
-        confBand = 0.5,         -- "доверительный диапазон" (в среднеквадратических отклонениях)
-        trendThreshold = 0.8,   -- превышение величины тренда этого порога означает уверенный 
-                                -- рост или снижение без вероятности скорого разворота
-                                -- пороговое значение задается в стандартных отклонениях тренда
-                                --
+        confBand = 0.5,                 -- "доверительный диапазон" (в среднеквадратических отклонениях)
+        trendThreshold = 0.8,           -- превышение величины тренда этого порога означает уверенный 
+                                        -- рост или снижение без вероятности скорого разворота
+                                        -- пороговое значение задается в стандартных отклонениях тренда
+
+        bookHorizont = 5,               -- сколько шагов цены в стакане прпинимать во внимание
+
         params = {
             { name="avgFactorFast", min=1, max=1e32, step=1, precision=1e-4 },
             { name="avgFactorSlow", min=1, max=1e32, step=1, precision=1e-4 },
@@ -534,13 +536,29 @@ end
 
 function strategy:calcOfferDemand(l2)
     l2 = l2 or self:getQuoteLevel2()
-    local demand, offer = 0, 0
+    if l2.bid_count == 0 or l2.offer_count == 0 then
+        if self.market.fastTrend > 0 then
+            return 1e9, 1
+        end
+        return 1, 1e9
+    end
+    local minPrice = l2.bid[l2.bid_count].price - self.etc.bookHorizont*self.etc.priceStepSize
+    local maxPrice = l2.offer[1].price + self.etc.bookHorizont*self.etc.priceStepSize
+
+    local offer, demand = 1e-9, 1e-9
+
     for i = 0, math.min(5, l2.bid_count) - 1 do
         local q = l2.bid[l2.bid_count - i]
+        if q.price < minPrice then
+            break
+        end
         demand = demand + q.quantity
     end
     for i = 1, math.min(5, l2.offer_count) do
         local q = l2.offer[i]
+        if q.price > maxPrice then
+            break
+        end
         offer = offer + q.quantity
     end
     return offer, demand
@@ -608,13 +626,10 @@ function strategy:calcPlannedPos()
     local etc = self.etc
     local state = self.state
     local market = state.market
-    local offerVol, demandVol = self:calcOfferDemand(l2)
+    local offerVol, demandVol = self:calcOfferDemand()
     local confBand = state.fastPrice:getDeviation()*etc.confBand
     local maxBand = state.fastPrice:getDeviation()
     local mean = (market.bid + market.offer)/2
-
-    local offerVol, demandVol = self:calcOfferDemand(l2)
-    local mean = (market.offer + market.bid)/2
 
     local loss = state.balance.maxValue - state.balance.currValue
     if loss > etc.maxLoss then
@@ -628,7 +643,7 @@ function strategy:calcPlannedPos()
 
     if market.fastTrend > 0 then
         if offerVol/demandVol >= etc.maxImbalance then
-            self.state.state = "Неблагоприятный дисбаланс"
+            self.state.state = string.format("Неблагоприятный дисбаланс (%.0f / %.0f)", offerVol, demandVol)
             state.plannedPos.op = false
             return
         end
@@ -640,7 +655,7 @@ function strategy:calcPlannedPos()
 
     if market.fastTrend < 0 then
         if demandVol/offerVol >= etc.maxImbalance then
-            self.state.state = "Неблагоприятный дисбаланс"
+            self.state.state = string.format("Неблагоприятный дисбаланс (%.0f / %.0f)", offerVol, demandVol)
             state.plannedPos.op = false
             return
         end
@@ -798,15 +813,17 @@ function strategy:onMarketShift()
         end
     elseif state.phase == PHASE_PRICE_CHANGE then
         if state.order:isActive() then
+            local sellPrice = market.offer + etc.priceStepSize
+            local buyPrice =  market.bid - etc.priceStepSize
             local maxPrice = market.offer + state.fastPrice:getDeviation()/2
             local minPrice = market.bid - state.fastPrice:getDeviation()/2
             local kill = false
             if state.order.operation == 'B' then
-                if state.order.price < minPrice then
+                if (state.order.price < minPrice) and (state.order.price < (buyPrice - etc.priceStepSize)) then
                     kill = true
                 end
             elseif state.order.operation == 'S' then
-                if state.order.price > maxPrice then
+                if (state.order.price > maxPrice) and (state.order.price > (sellPrice + etc.priceStepSize)) then
                     kill = true
                 end
             end
@@ -820,7 +837,7 @@ function strategy:onMarketShift()
             if state.position > 0 then
                 res, err = state.order:send('S', market.offer + etc.priceStepSize, state.position)
             elseif state.position < 0 then
-                res, err = state.order:send('B', market.offer - etc.priceStepSize, -state.position)
+                res, err = state.order:send('B', market.bid - etc.priceStepSize, -state.position)
             end
             state.phase = PHASE_CLOSE
             self:checkStatus(res, err)
