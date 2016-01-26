@@ -835,9 +835,9 @@ function strategy:onMarketShift()
         else
             local res, err = true, ""
             if state.position > 0 then
-                res, err = state.order:send('S', market.offer + etc.priceStepSize, state.position)
+                res, err = state.order:send('S', sellPrice, state.position)
             elseif state.position < 0 then
-                res, err = state.order:send('B', market.bid - etc.priceStepSize, -state.position)
+                res, err = state.order:send('B', buyPrice, -state.position)
             end
             state.phase = PHASE_CLOSE
             self:checkStatus(res, err)
