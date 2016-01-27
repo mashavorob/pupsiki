@@ -77,8 +77,8 @@ local q_scalper = {
     ui_mapping = {
         { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" },
         { name="trends", title="Трэнды", ctype=QTABLE_STRING_TYPE, width=25, format="%.3f" },
-        { name="averages", title="Средние", ctype=QTABLE_STRING_TYPE, width=55, format="%.3f" },
-        { name="deviations", title="Отклонения", ctype=QTABLE_STRING_TYPE, width=25, format="%.3f" },
+        { name="averages", title="Средние", ctype=QTABLE_STRING_TYPE, width=45, format="%.3f" },
+        { name="deviations", title="Отклонения", ctype=QTABLE_STRING_TYPE, width=20, format="%.3f" },
         { name="spread", title="Cпред", ctype=QTABLE_STRING_TYPE, width=22, format="%s" },
         { name="volume", title="Объем: Покупка/Продажа/Всего", ctype=QTABLE_STRING_TYPE, width=35, format="%s" },
         { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=15, format="%s" },
@@ -620,6 +620,10 @@ function strategy:calcMarketParams(l2)
     market.minPrice = math.ceil(market.minPrice/etc.priceStepSize)*etc.priceStepSize
  end
 
+function strategy:getForwardPrice(shift)
+    return self.state.market.fastTrend*shift + self.state.market.fastTrend2*math.pow(shift, 2)/2
+end
+
 -- function returns operation, price
 function strategy:calcPlannedPos()
 
@@ -665,8 +669,9 @@ function strategy:calcPlannedPos()
         end
     end
 
-    local nearShift = market.fastTrend*etc.nearForecast + market.fastTrend2*math.pow(etc.nearForecast, 2)/2
-    local farShift = market.fastTrend*etc.farForecast + market.fastTrend2*math.pow(etc.farForecast, 2)/2
+    local nearShift = self:getForwardPrice(etc.nearForecast)
+    local farShift = self:getForwardPrice(etc.nearForecast + etc.farForecast)
+
     if market.fastTrend > 0 then
         local basePrice = math.min(market.fastPrice + confBand, market.bid)
         local nearPrice = math.floor((basePrice + nearShift)/etc.priceStepSize)*etc.priceStepSize
@@ -768,7 +773,7 @@ function strategy:onMarketShift()
             self:checkStatus(res, err)
         end
     elseif state.phase == PHASE_CLOSE then
-        local price = state.order.price + market.fastTrend*etc.farForecast + market.fastTrend2*math.pow(etc.farForecast, 2)/2
+        local price = state.order.price + self:getForwardPrice(etc.nearForecast + etc.farForecast)
         if state.order:isActive() then
             local kill = false
             if state.order.operation == 'B' then
@@ -812,11 +817,11 @@ function strategy:onMarketShift()
             self:checkStatus(res, err)
         end
     elseif state.phase == PHASE_PRICE_CHANGE then
+        local sellPrice = market.offer + etc.priceStepSize
+        local buyPrice =  market.bid - etc.priceStepSize
+        local maxPrice = market.offer + state.fastPrice:getDeviation()/2
+        local minPrice = market.bid - state.fastPrice:getDeviation()/2
         if state.order:isActive() then
-            local sellPrice = market.offer + etc.priceStepSize
-            local buyPrice =  market.bid - etc.priceStepSize
-            local maxPrice = market.offer + state.fastPrice:getDeviation()/2
-            local minPrice = market.bid - state.fastPrice:getDeviation()/2
             local kill = false
             if state.order.operation == 'B' then
                 if (state.order.price < minPrice) and (state.order.price < (buyPrice - etc.priceStepSize)) then
@@ -852,8 +857,8 @@ end
 function strategy:checkStatus(status, err)
     if not status then
         assert(err, "err is nil\n" .. debug.traceback())
-        self.state.lastError = "Ошибка: " .. err
-        self.state.state = "Приостановка (" .. self.state.state .. ")"
+        self.ui_state.lastError = "Ошибка: " .. err
+        self.ui_state.state = "Приостановка (" .. self.state.state .. ")"
         self.state.halt = true
         return false
     end    
