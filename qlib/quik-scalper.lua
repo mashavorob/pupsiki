@@ -20,18 +20,18 @@ local q_scalper = {
     etc = { -- master configuration
 
         -- Главные параметры, задаваемые в ручную
-        asset = "RIH6",                 -- бумага
+        asset = "SiH6",                 -- бумага
         class = "SPBFUT",               -- класс
-        title = "qscalper - [RIH6]",    -- заголовок таблицы
+        title = "qscalper - [SiH6]",    -- заголовок таблицы
 
         -- Параметры вычисляемые автоматически
         account = "SPBFUT005eC",
         firmid =  "SPBFUT589000",
 
-        priceStepSize = 10,             -- granularity of price (minimum price shift)
-        priceStepValue = 12,            -- price of price step (price of minimal price shift)
-        minSpread = 1,                  -- минимальный спрэд
-        maxSpread = 2,                  -- максимальный спрэд
+        priceStepSize = 1,              -- granularity of price (minimum price shift)
+        priceStepValue = 1,             -- price of price step (price of minimal price shift)
+        minSpread = 6,                  -- минимальный спрэд
+        maxSpread = 20,                 -- максимальный спрэд
 
         -- Параметры задаваемые вручную
         absPositionLimit = 3,           -- максимальная приемлемая позиция (абсолютное ограничение)
@@ -39,8 +39,8 @@ local q_scalper = {
 
         maxLoss = 1000,                 -- максимальная приемлимая потеря
 
-        avgFactorFast = 50,             -- "быстрый" коэффициент осреднения
-        avgFactorSlow = 200,            -- "медленный" коэфициент осреднения
+        avgFactorFast = 80,             -- "быстрый" коэффициент осреднения
+        avgFactorSlow = 700,            -- "медленный" коэфициент осреднения
         avgFactorLot = 200,             -- коэффициент осреднения размера лота (сделки)
 
         maxAverageLots = 100,           -- ставить позиции не далее этого количества средних лотов
@@ -56,7 +56,7 @@ local q_scalper = {
         trendThreshold = 0.8,           -- превышение величины тренда этого порога означает уверенный 
                                         -- рост или снижение без вероятности скорого разворота
                                         -- пороговое значение задается в стандартных отклонениях тренда
-        maxTrend = 0.9,                 -- предельная волотильность
+        maxTrend = 10.2,                 -- предельная волотильность
         volQuiteTime = 3,               -- продолжительность паузы при волатильности (в колебаниях тренда)
         maxQuiteTime = 5,               -- максимальное время ожидания
 

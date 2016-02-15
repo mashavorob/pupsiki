@@ -16,7 +16,7 @@ local etc = {
     firmid =  "==SPBFUT589000",
     sname = "quik-scalper",
 
-    asset = 'RIH6',
+    asset = 'SiH6',
     class = "SPBFUT",
 }
 
