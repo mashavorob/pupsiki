@@ -1,10 +1,9 @@
 #!/usr/bin/lua 
-
 --[[
+# vi: ft=lua:fenc=cp1251 
 #
 # Юнит тест раннер для qlib
 #
-# vi: ft=lua:fenc=cp1251 
 #
 # Если Вы можете прочитать эту строку то все нормально
 # If you cannot read the line above you editor use wrong encoding
@@ -16,11 +15,13 @@
 require("quik-logger")
 require("quik-etc")
 require("quik-avd")
+require("quik-book")
 
 local unitTests = {
     csvlog = csvlog.getTestSuite(),
     config = config.getTestSuite(),
     avd = avd.getTestSuite(),
+    book = q_book.getTestSuite(),
 }
 
 local failed = { }
@@ -49,4 +50,6 @@ if failed[1] then
     for i, name in ipairs(failed) do
         print(name)
     end
+else
+    print("\nAll tests passed")
 end

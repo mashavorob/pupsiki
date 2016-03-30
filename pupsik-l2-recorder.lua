@@ -25,17 +25,21 @@ l2r = {
     state = {
         state = "Запись",
     },
+    assets = {
+        { class='SPBFUT', asset='RIH6' },
+        { class='SPBFUT', asset='SiH6' },
+    },
 }
 
 function l2r:serializeItem(val)
     if type(val) == "string" then
-        return "'" .. val .. "'"
+        return string.format("%q", val)
     elseif type(val) == "number" then
         return tostring(val)
     elseif type(val) == "table" then
         local ln = "{ "
         for k,v in pairs(val) do
-            ln = ln .. self:serializeItem(k) .. "=" .. self:serializeItem(v) .. ","
+            ln = ln .. string.format("[%s] = %s, ", self:serializeItem(k), self:serializeItem(v))
         end
         ln = ln .. "}"
         return ln
@@ -62,7 +66,7 @@ end
 function l2r:logItem(item)
     self:checkLog()
     if self.log.file then
-        self.log.file:write( self:serializeItem(item) .. "\n" )
+        self.log.file:write( self:serializeItem(item) .. ",\n" )
     end
 end
 
@@ -70,14 +74,27 @@ function l2r:onInit()
     assert(require("qlib/quik-table"))
     self.qtable = qtable.create("conf/quik-l2-recorder.wpos", self.title, self.ui_mapping)
     self.qtable.addRow(self.state)
+    for _,item in ipairs(self.assets) do
+        Subscribe_Level_II_Quotes(item.class, item.asset)
+    end
 end
 
 function l2r:onTrade(trade)
-    self:logItem { event="onTrade", trade=trade }
+    for _, item in ipairs(self.assets) do
+        if trade.class_code == item.class and trade.sec_code == item.asset then
+            self:logItem { event="onTrade", trade=trade }
+            break
+        end
+    end
 end
 
 function l2r:onQuote(class, asset)
-    self:logItem { event="onQuote", class=class, asset=asset, tstamp=os.clock(), l2=getQuoteLevel2(class, asset) }
+    for _, item in ipairs(self.assets) do
+        if class == item.class and asset == item.asset then
+            self:logItem { event="onQuote", class=class, asset=asset, tstamp=os.clock(), l2=getQuoteLevel2(class, asset) }
+            break
+        end
+    end
 end
 
 function l2r:onIdle()
@@ -136,7 +153,7 @@ function OnInit(scriptPath)
     recorder:onInit()
 end
 
-function OnTrade(trade)
+function OnAllTrade(trade)
     recorder:onTrade(trade)
 end
 
