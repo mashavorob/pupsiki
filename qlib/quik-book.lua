@@ -18,6 +18,8 @@ local book = {
 
     l2 = false,
     pos = 0,
+    paid = 0,
+    deals = 0,
 }
 
 local tests = {
@@ -26,6 +28,10 @@ local tests = {
 local emptyBook = { bid_count=0, offer_count=0, bid={}, offer={} }
 
 q_book = { }
+
+function q_book.getEmptyBook()
+    return book.makeCopy(emptyBook, true)
+end
 
 function q_book.create(class, asset, priceStep, priceStepValue)
     local res = { class=class
@@ -41,6 +47,10 @@ function q_book.getTestSuite()
     return tests
 end
 
+function book:getL2Snapshot()
+    return book.makeCopy( self.l2Snap or emptyBook, true )
+end
+
 function book:onQuote(l2Snap)
 
     if l2Snap then
@@ -52,7 +62,7 @@ function book:onQuote(l2Snap)
     self.originalL2Snap = l2Snap
     self.l2Snap = book.makeCopy(self.originalL2Snap)
     local evs = self:updateBookWithOrder(self.l2Snap, self.order)
-    table.insert(evs, {name="OnQuote", data=book.makeCopy(self.l2Snap, true)})
+    table.insert(evs, {name="OnQuote", data={class=self.class, asset=self.asset, l2Snap=book.makeCopy(self.l2Snap, true)}})
     if order and order.balance == 0 then
         self.order = nil
     end
@@ -78,6 +88,9 @@ function book:onTrade(trade)
             self.order.balance = self.order.balance - size
             table.insert(evs, {name="OnAllTrade", data=self:makeTrade(op, self.order.price, size)})
             trade.qty = trade.qty - size
+            self.pos = self.pos + size
+            self.paid = self.paid - quote.price/self.priceStep*self.priceStepValue*size
+            self.deals = self.deals + size
         end
     else
         -- buy
@@ -92,6 +105,9 @@ function book:onTrade(trade)
             self.order.balance = self.order.balance - size
             table.insert(evs, {name="OnAllTrade", data=self:makeTrade(op, self.order.price, size)})
             trade.qty = trade.qty - size
+            self.pos = self.pos - size
+            self.paid = self.paid + quote.price/self.priceStep*self.priceStepValue*size
+            self.deals = self.deals + size
         end
     end
     
@@ -106,7 +122,7 @@ function book:onTrade(trade)
         end
         self.l2Snap = book.makeCopy(self.originalL2Snap)
         self:updateBookWithOrder(self.l2Snap, self.order)
-        table.insert(evs, {name="OnQuote", data=book.makeCopy(self.l2Snap, true)})
+        table.insert(evs, {name="OnQuote", data={class=self.class, asset=self.asset, l2Snap=book.makeCopy(self.l2Snap, true)}})
     end    
     return evs
 end
@@ -121,7 +137,7 @@ function book:onOrder(trans)
             table.insert(evs, {name="OnTransReply", data=self:makeOrder(trans)})
             table.insert(evs, {name="OnTransReply", data=self.order})
             self.l2Snap = book.makeCopy(self.originalL2Snap)
-            table.insert(evs, {name="OnQuote", data=book.makeCopy(self.l2Snap, true)})
+            table.insert(evs, {name="OnQuote", data={class=self.class, asset=self.asset, l2Snap=book.makeCopy(self.l2Snap, true)}})
             self.order = nil
         else
             msg = string.format("Order with key %s does not exists", trans.ORDER_KEY)
@@ -130,6 +146,7 @@ function book:onOrder(trans)
         assert(not self.order, "multiple orders are not supported")
         self.order = self:makeOrder(trans)
         self.l2Snap = book.makeCopy(self.originalL2Snap)
+        local prevHoldings = { pos = self.pos, paid = self.paid, deals = self.deals }
         evs = self:updateBookWithOrder(self.l2Snap, self.order, true)
         if trans.EXECUTE_CONDITION=="KILL_OR_FILL" and self.order.balance > 0 then
             -- discard the order
@@ -137,6 +154,7 @@ function book:onOrder(trans)
             self.order.flags = math.floor(self.order.flags/2)*2
             evs = { {name="OnTransReply", data=self.order} }
             self.order = nil
+            self.pos, self.paid, self.deals = prevHoldigs.pos, prevHolding.paid, prevHoldigs.deals
         elseif trans.EXECUTE_CONDITION=="KILL_BALANCE" then
             self.order.flags = math.floor(self.order.flags/2)*2
             table.insert(evs, {name="OnTransReply", data=self.order})
@@ -145,7 +163,7 @@ function book:onOrder(trans)
             trans.EXECUTE_CONDITION=="KILL_OR_FILL" and self.order.balance == 0 
         then
             table.insert(evs, {name="OnTransReply", data=self.order})
-            table.insert(evs, {name="OnQuote", data=book.makeCopy(self.l2Snap, true)})
+            table.insert(evs, {name="OnQuote", data={class=self.class, asset=self.asset, l2Snap=book.makeCopy(self.l2Snap, true)}})
             if self.order.balance == 0 then
                 self.order.flags = math.floor(self.order.flags/2)*2
                 self.order = nil
@@ -182,6 +200,8 @@ function book:updateBookWithOrder(l2Snap, order, blockTransReply)
                 l2Snap.bid_count = l2Snap.bid_count - 1
             end
             table.insert(evs, {name="OnAllTrade", data=self:makeTrade('S', quote.price, size)})
+            self.pos = self.pos - size
+            self.paid = self.paid + quote.price/self.priceStep*self.priceStepValue*size
             onOrderReply = true
         end
         if order.balance > 0 then
@@ -213,6 +233,8 @@ function book:updateBookWithOrder(l2Snap, order, blockTransReply)
                 l2Snap.offer_count = l2Snap.offer_count - 1
             end
             table.insert(evs, {name="OnAllTrade", data=self:makeTrade('B', quote.price, size)})
+            self.pos = self.pos + size
+            self.paid = self.paid - quote.price/self.priceStep*self.priceStepValue*size
             onOrderReply = true
         end
         
@@ -412,10 +434,10 @@ function tests.testFirstOrderBuy()
     assert(evs[1].data.trans_id == tonumber(o.TRANS_ID))
     assert(evs[1].data.balance == tonumber(o.QUANTITY))
     assert(evs[2].name == "OnQuote")
-    assert(evs[2].data.bid_count == "1")
-    assert(evs[2].data.offer_count == "0")
-    assert(evs[2].data.bid[1].price == o.PRICE)
-    assert(evs[2].data.bid[1].quantity == o.QUANTITY)
+    assert(evs[2].data.l2Snap.bid_count == "1")
+    assert(evs[2].data.l2Snap.offer_count == "0")
+    assert(evs[2].data.l2Snap.bid[1].price == o.PRICE)
+    assert(evs[2].data.l2Snap.bid[1].quantity == o.QUANTITY)
 end
 
 function tests.testFirstOrderSell()
@@ -434,10 +456,10 @@ function tests.testFirstOrderSell()
     assert(evs[1].data.trans_id == tonumber(o.TRANS_ID))
     assert(evs[1].data.balance == tonumber(o.QUANTITY))
     assert(evs[2].name == "OnQuote")
-    assert(evs[2].data.bid_count == "0")
-    assert(evs[2].data.offer_count == "1")
-    assert(evs[2].data.offer[1].price == o.PRICE)
-    assert(evs[2].data.offer[1].quantity == o.QUANTITY)
+    assert(evs[2].data.l2Snap.bid_count == "0")
+    assert(evs[2].data.l2Snap.offer_count == "1")
+    assert(evs[2].data.l2Snap.offer[1].price == o.PRICE)
+    assert(evs[2].data.l2Snap.offer[1].quantity == o.QUANTITY)
 end
 
 function tests.testOrderIntoBid()
@@ -472,12 +494,12 @@ function tests.testOrderIntoBid()
     assert(evs[1].data.trans_id == tonumber(o.TRANS_ID))
     assert(evs[1].data.balance == tonumber(o.QUANTITY))
     assert(evs[2].name == "OnQuote")
-    assert(evs[2].data.bid[1].quantity == "1")
-    assert(evs[2].data.bid[2].quantity == "1")
-    assert(evs[2].data.bid[3].quantity == "2", evs[2].data.bid[3].quantity)
-    assert(evs[2].data.offer[1].quantity == "1")
-    assert(evs[2].data.offer[2].quantity == "1")
-    assert(evs[2].data.offer[3].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[1].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[2].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[3].quantity == "2", evs[2].data.l2Snap.bid[3].quantity)
+    assert(evs[2].data.l2Snap.offer[1].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[2].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[3].quantity == "1")
 end
 
 function tests.testOrderIntoOffer()
@@ -512,12 +534,12 @@ function tests.testOrderIntoOffer()
     assert(evs[1].data.trans_id == tonumber(o.TRANS_ID))
     assert(evs[1].data.balance == tonumber(o.QUANTITY))
     assert(evs[2].name == "OnQuote")
-    assert(evs[2].data.bid[1].quantity == "1")
-    assert(evs[2].data.bid[2].quantity == "1")
-    assert(evs[2].data.bid[3].quantity == "1")
-    assert(evs[2].data.offer[1].quantity == "2")
-    assert(evs[2].data.offer[2].quantity == "1")
-    assert(evs[2].data.offer[3].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[1].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[2].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[3].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[1].quantity == "2")
+    assert(evs[2].data.l2Snap.offer[2].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[3].quantity == "1")
 end
 
 function tests.testOrderBuyIntoMiddle()
@@ -555,20 +577,20 @@ function tests.testOrderBuyIntoMiddle()
 
     assert(evs[2].name == "OnQuote")
     
-    assert(evs[2].data.bid_count == "4")
-    assert(evs[2].data.offer_count == "3")
+    assert(evs[2].data.l2Snap.bid_count == "4")
+    assert(evs[2].data.l2Snap.offer_count == "3")
 
-    assert(evs[2].data.bid[1].quantity == "1")
-    assert(evs[2].data.bid[1].price == "10")
-    assert(evs[2].data.bid[2].quantity == "1")
-    assert(evs[2].data.bid[2].price == "20")
-    assert(evs[2].data.bid[3].quantity == "1")
-    assert(evs[2].data.bid[3].price == "30")
-    assert(evs[2].data.bid[4].quantity == "1")
-    assert(evs[2].data.bid[4].price == "40")
-    assert(evs[2].data.offer[1].quantity == "1")
-    assert(evs[2].data.offer[2].quantity == "1")
-    assert(evs[2].data.offer[3].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[1].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[1].price == "10")
+    assert(evs[2].data.l2Snap.bid[2].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[2].price == "20")
+    assert(evs[2].data.l2Snap.bid[3].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[3].price == "30")
+    assert(evs[2].data.l2Snap.bid[4].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[4].price == "40")
+    assert(evs[2].data.l2Snap.offer[1].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[2].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[3].quantity == "1")
 end
 
 function tests.testOrderSellIntoMiddle()
@@ -606,20 +628,20 @@ function tests.testOrderSellIntoMiddle()
     
     assert(evs[2].name == "OnQuote")
     
-    assert(evs[2].data.bid_count == "3")
-    assert(evs[2].data.offer_count == "4", evs[2].data.offer_count)
+    assert(evs[2].data.l2Snap.bid_count == "3")
+    assert(evs[2].data.l2Snap.offer_count == "4", evs[2].data.l2Snap.offer_count)
 
-    assert(evs[2].data.bid[1].quantity == "1")
-    assert(evs[2].data.bid[2].quantity == "1")
-    assert(evs[2].data.bid[3].quantity == "1")
-    assert(evs[2].data.offer[1].quantity == "1")
-    assert(evs[2].data.offer[1].price == "40")
-    assert(evs[2].data.offer[2].quantity == "1")
-    assert(evs[2].data.offer[2].price == "50")
-    assert(evs[2].data.offer[3].quantity == "1")
-    assert(evs[2].data.offer[3].price == "60")
-    assert(evs[2].data.offer[4].quantity == "1")
-    assert(evs[2].data.offer[4].price == "70")
+    assert(evs[2].data.l2Snap.bid[1].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[2].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[3].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[1].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[1].price == "40")
+    assert(evs[2].data.l2Snap.offer[2].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[2].price == "50")
+    assert(evs[2].data.l2Snap.offer[3].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[3].price == "60")
+    assert(evs[2].data.l2Snap.offer[4].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[4].price == "70")
 end
 
 function tests.testOrderBuyIntoSparse()
@@ -657,20 +679,20 @@ function tests.testOrderBuyIntoSparse()
     
     assert(evs[2].name == "OnQuote")
     
-    assert(evs[2].data.bid_count == "4")
-    assert(evs[2].data.offer_count == "3")
+    assert(evs[2].data.l2Snap.bid_count == "4")
+    assert(evs[2].data.l2Snap.offer_count == "3")
 
-    assert(evs[2].data.bid[1].quantity == "1")
-    assert(evs[2].data.bid[1].price == "10")
-    assert(evs[2].data.bid[2].quantity == "1")
-    assert(evs[2].data.bid[2].price == "20")
-    assert(evs[2].data.bid[3].quantity == "1")
-    assert(evs[2].data.bid[3].price == "30")
-    assert(evs[2].data.bid[4].quantity == "1")
-    assert(evs[2].data.bid[4].price == "40")
-    assert(evs[2].data.offer[1].quantity == "1")
-    assert(evs[2].data.offer[2].quantity == "1")
-    assert(evs[2].data.offer[3].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[1].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[1].price == "10")
+    assert(evs[2].data.l2Snap.bid[2].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[2].price == "20")
+    assert(evs[2].data.l2Snap.bid[3].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[3].price == "30")
+    assert(evs[2].data.l2Snap.bid[4].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[4].price == "40")
+    assert(evs[2].data.l2Snap.offer[1].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[2].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[3].quantity == "1")
 end
 
 function tests.testOrderSellIntoSparse()
@@ -709,20 +731,20 @@ function tests.testOrderSellIntoSparse()
 
     assert(evs[2].name == "OnQuote")
     
-    assert(evs[2].data.bid_count == "3")
-    assert(evs[2].data.offer_count == "4")
+    assert(evs[2].data.l2Snap.bid_count == "3")
+    assert(evs[2].data.l2Snap.offer_count == "4")
 
-    assert(evs[2].data.bid[1].quantity == "1")
-    assert(evs[2].data.bid[2].quantity == "1")
-    assert(evs[2].data.bid[3].quantity == "1")
-    assert(evs[2].data.offer[1].quantity == "1")
-    assert(evs[2].data.offer[1].price == "40")
-    assert(evs[2].data.offer[2].quantity == "1")
-    assert(evs[2].data.offer[2].price == "50")
-    assert(evs[2].data.offer[3].quantity == "1")
-    assert(evs[2].data.offer[3].price == "60")
-    assert(evs[2].data.offer[4].quantity == "1")
-    assert(evs[2].data.offer[4].price == "70")
+    assert(evs[2].data.l2Snap.bid[1].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[2].quantity == "1")
+    assert(evs[2].data.l2Snap.bid[3].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[1].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[1].price == "40")
+    assert(evs[2].data.l2Snap.offer[2].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[2].price == "50")
+    assert(evs[2].data.l2Snap.offer[3].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[3].price == "60")
+    assert(evs[2].data.l2Snap.offer[4].quantity == "1")
+    assert(evs[2].data.l2Snap.offer[4].price == "70")
 end
 
 function tests.testOrderBuysFromBook()
@@ -762,13 +784,13 @@ function tests.testOrderBuysFromBook()
     assert(evs[3].data.balance == 0)
     assert(evs[4].name == "OnQuote")
 
-    assert(evs[4].data.bid_count == "3")
-    assert(evs[4].data.offer_count == "2")
+    assert(evs[4].data.l2Snap.bid_count == "3")
+    assert(evs[4].data.l2Snap.offer_count == "2")
 
-    assert(evs[4].data.offer[1].quantity == "2")
-    assert(evs[4].data.offer[1].price == "50")
-    assert(evs[4].data.offer[2].quantity == "5")
-    assert(evs[4].data.offer[2].price == "60")
+    assert(evs[4].data.l2Snap.offer[1].quantity == "2")
+    assert(evs[4].data.l2Snap.offer[1].price == "50")
+    assert(evs[4].data.l2Snap.offer[2].quantity == "5")
+    assert(evs[4].data.l2Snap.offer[2].price == "60")
 end
 
 function tests.testOrderSellsFromBook()
@@ -806,13 +828,13 @@ function tests.testOrderSellsFromBook()
     assert(evs[3].data.balance == 0)
     assert(evs[4].name == "OnQuote")
 
-    assert(evs[4].data.bid_count == "2")
-    assert(evs[4].data.offer_count == "3")
+    assert(evs[4].data.l2Snap.bid_count == "2")
+    assert(evs[4].data.l2Snap.offer_count == "3")
 
-    assert(evs[4].data.bid[1].quantity == "5")
-    assert(evs[4].data.bid[1].price == "10")
-    assert(evs[4].data.bid[2].quantity == "2")
-    assert(evs[4].data.bid[2].price == "20")
+    assert(evs[4].data.l2Snap.bid[1].quantity == "5")
+    assert(evs[4].data.l2Snap.bid[1].price == "10")
+    assert(evs[4].data.l2Snap.bid[2].quantity == "2")
+    assert(evs[4].data.l2Snap.bid[2].price == "20")
 end
 
 function tests.testTradeBuysFromBook()
@@ -861,15 +883,15 @@ function tests.testTradeBuysFromBook()
 
     assert(evs[3].name == "OnQuote")
 
-    assert(evs[3].data.bid_count == "3")
-    assert(evs[3].data.offer_count == "3")
+    assert(evs[3].data.l2Snap.bid_count == "3")
+    assert(evs[3].data.l2Snap.offer_count == "3")
 
-    assert(evs[3].data.bid[1].quantity == "5")
-    assert(evs[3].data.bid[1].price == "10")
-    assert(evs[3].data.bid[2].quantity == "5")
-    assert(evs[3].data.bid[2].price == "20")
-    assert(evs[3].data.bid[3].quantity == "1")
-    assert(evs[3].data.bid[3].price == "30")
+    assert(evs[3].data.l2Snap.bid[1].quantity == "5")
+    assert(evs[3].data.l2Snap.bid[1].price == "10")
+    assert(evs[3].data.l2Snap.bid[2].quantity == "5")
+    assert(evs[3].data.l2Snap.bid[2].price == "20")
+    assert(evs[3].data.l2Snap.bid[3].quantity == "1")
+    assert(evs[3].data.l2Snap.bid[3].price == "30")
 end
 
 function tests.testTradeSellsFromBook()
@@ -917,15 +939,15 @@ function tests.testTradeSellsFromBook()
 
     assert(evs[3].name == "OnQuote")
 
-    assert(evs[3].data.bid_count == "3")
-    assert(evs[3].data.offer_count == "3")
+    assert(evs[3].data.l2Snap.bid_count == "3")
+    assert(evs[3].data.l2Snap.offer_count == "3")
 
-    assert(evs[3].data.offer[1].quantity == "1")
-    assert(evs[3].data.offer[1].price == "40")
-    assert(evs[3].data.offer[2].quantity == "5")
-    assert(evs[3].data.offer[2].price == "50")
-    assert(evs[3].data.offer[3].quantity == "5")
-    assert(evs[3].data.offer[3].price == "60")
+    assert(evs[3].data.l2Snap.offer[1].quantity == "1")
+    assert(evs[3].data.l2Snap.offer[1].price == "40")
+    assert(evs[3].data.l2Snap.offer[2].quantity == "5")
+    assert(evs[3].data.l2Snap.offer[2].price == "50")
+    assert(evs[3].data.l2Snap.offer[3].quantity == "5")
+    assert(evs[3].data.l2Snap.offer[3].price == "60")
 end
 
 function tests.testUncrossBid()
@@ -1145,13 +1167,13 @@ function tests.testKillOrFillFull()
     assert(evs[3].data.trans_id == tonumber(o.TRANS_ID))
     assert(evs[3].data.balance == 0)
 
-    assert(evs[4].data.bid_count == "2")
-    assert(evs[4].data.offer_count == "3")
+    assert(evs[4].data.l2Snap.bid_count == "2")
+    assert(evs[4].data.l2Snap.offer_count == "3")
 
-    assert(evs[4].data.bid[1].quantity == "5")
-    assert(evs[4].data.bid[1].price == "10")
-    assert(evs[4].data.bid[2].quantity == "2")
-    assert(evs[4].data.bid[2].price == "20")
+    assert(evs[4].data.l2Snap.bid[1].quantity == "5")
+    assert(evs[4].data.l2Snap.bid[1].price == "10")
+    assert(evs[4].data.l2Snap.bid[2].quantity == "2")
+    assert(evs[4].data.l2Snap.bid[2].price == "20")
 end
 
 function tests.testKillOrFillPartial()
@@ -1228,7 +1250,6 @@ function tests.testKillOrder()
     assert(evs[2].data.balance == tonumber(o.QUANTITY))
     assert(evs[2].data.flags % 2 == 0)
     assert(evs[3].name == "OnQuote")
-    assert(evs[3].data.bid_count == "0", evs[3].data.bid_count)
-    assert(evs[3].data.offer_count == "0")
+    assert(evs[3].data.l2Snap.bid_count == "0", evs[3].data.l2Snap.bid_count)
+    assert(evs[3].data.l2Snap.offer_count == "0")
 end
-

@@ -108,6 +108,9 @@ function avgEx:getDeviation(n)
     if n > #self.average then
         return 0
     end
+    if not self.dispersion[n] then
+        return 0
+    end
     return math.pow(self.dispersion[n], 0.5)
 end
 

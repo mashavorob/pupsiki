@@ -25,6 +25,8 @@ Where
     --help,/?   - show this message
 ]]
 
+require("qlib/quik-simulator")
+
 local function printHelpAndExit(code)
     print(string.format(helpMessage, arg[0]))
     os.exit(code)
@@ -71,6 +73,12 @@ local function loadMarketData(logs)
     return container
 end
 
+local function runStrategy(strategy, container)
+
+    local margin = q_simulator.runStrategy(strategy, container)
+    print(string.format("total margin: %f", margin))
+end
+
 print("Level 2 Market Data Player (c) 2016\n")
 
 -- Parse command line
@@ -81,4 +89,15 @@ for i, l in ipairs(logs) do
 end
 print(string.format("op=%s strategy=%s%s", op, strategy, ll))
 
-loadMarketData(logs)
+print("loading market data")
+local container = loadMarketData(logs)
+
+if op == "run" then
+    print(string.format("Running %s", strategy))
+    runStrategy(strategy, container)
+elseif op == "optimize" then
+    assert(false, "Optimization is not implemented yet")
+else
+    assert(false, "Operation '" .. op .. "' is not supported")
+end
+print("Done.")

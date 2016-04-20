@@ -11,10 +11,10 @@
 # or enable modeline in your .vimrc
 ]]
 
-require("qlib/quik-etc")
-require("qlib/quik-avg")
-require("qlib/quik-order")
-require("qlib/quik-utils")
+assert(require("qlib/quik-etc"))
+assert(require("qlib/quik-avg"))
+assert(require("qlib/quik-order"))
+assert(require("qlib/quik-utils"))
 
 local q_scalper = {
     etc = { -- master configuration
@@ -248,8 +248,8 @@ function strategy:init()
     -- walk through all trade
     local n = getNumberOf("all_trades")
     local first = math.max(0, n - HISTORY_TO_ANALYSE)
-    assert(n > 0, "“аблица всех сделок пуста€, старт невозможен\n")
-    assert(n - first > MIN_HISTORY, "Ќедостаточно исторических данных, старт невозможен\n")
+    --assert(n > 0, "“аблица всех сделок пуста€, старт невозможен\n")
+    --assert(n - first > MIN_HISTORY, "Ќедостаточно исторических данных, старт невозможен\n")
     
     self.state.lotSize:onValue(1)
     self.state.phase = PHASE_INIT
@@ -299,6 +299,11 @@ function strategy:updatePosition()
     local state = self.state
     state.position = state.position + state.order.position
     state.order.position = 0
+end
+
+function strategy:onStartTrading()
+    self.state.pause = false
+    self.state.halt = false
 end
 
 function strategy:onStartStopCallback()
