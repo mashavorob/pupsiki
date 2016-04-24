@@ -69,7 +69,7 @@ function l2r:onLogOpen()
             , PRICEMIN = getParamEx(item.class, item.asset, "PRICEMIN")
             , PRICEMAX = getParamEx(item.class, item.asset, "PRICEMAX")
             }
-        self:logItem { event="onParams", class=item.class, asset=item.asset, params=params }
+        self:logItem { event="OnParams", class=item.class, asset=item.asset, params=params }
     end
     
     -- log historical trades
@@ -98,11 +98,11 @@ function l2r:onLogOpen()
             end
         end
     end
-    for i = first,n do
-        local trade = getItem("all_trades", n - i)
+    for i = first,n - 1 do
+        local trade = getItem("all_trades", i)
         local c = counts[ trade.class_code .. trade.sec_code ]
         if c then
-            self:logItem { event="onLogTrade", trade=trade }
+            self:logItem { event="OnLoggedTrade", trade=trade }
         end
     end
 

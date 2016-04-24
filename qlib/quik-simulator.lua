@@ -66,6 +66,15 @@ local params =
         }
     }
 
+function params:updateParams(class, asset, pp)
+    local assetList = self[class]
+    if not assetList then
+        assetList = {}
+        self[class] = assetList
+    end
+    assetList[asset] = pp
+end
+
 local books = 
     { classes = 
         { SPBFUT =
@@ -150,6 +159,10 @@ function evQueue:flushEvents()
             self.strategy:onTransReply(ev.data)
         elseif ev.name == "OnTrade" then
             self.strategy:onTrade(ev.data)
+        elseif ev.name == "OnParam" then
+            params:updateParams(ev.class, ev.asset, ev.params)        
+        elseif ev.name == "OnLoggedTrade" then
+            table.insert(tables.all_trades, ev.trade)
         else
             print("Unknown event type: ", ev.name)
             assert(false)
