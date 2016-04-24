@@ -49,7 +49,15 @@ function l2r:serializeItem(val)
     return "'unsupported type: " .. type(val) .. "'"
 end
 
+local insideOnLogOpen = false
+
 function l2r:onLogOpen()
+
+    -- prevent recursion
+    if insideOnLogOpen then
+        return
+    end
+    insideOnLogOpen = true
 
     -- log params
     for _, item in ipairs(self.assets) do
@@ -97,6 +105,8 @@ function l2r:onLogOpen()
             self:logItem { event="onLogTrade", trade=trade }
         end
     end
+
+    insideOnLogOpen = false
 end
 
 function l2r:checkLog()
@@ -128,6 +138,7 @@ function l2r:onInit()
     for _,item in ipairs(self.assets) do
         Subscribe_Level_II_Quotes(item.class, item.asset)
     end
+    self:onLogOpen()
 end
 
 function l2r:onTrade(trade)
