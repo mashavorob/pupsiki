@@ -26,8 +26,8 @@ l2r = {
         state = "Запись",
     },
     assets = {
-        { class='SPBFUT', asset='RIH6' },
-        { class='SPBFUT', asset='SiH6' },
+        { class='SPBFUT', asset='RIM6' },
+        { class='SPBFUT', asset='SiM6' },
     },
 }
 
@@ -49,14 +49,65 @@ function l2r:serializeItem(val)
     return "'unsupported type: " .. type(val) .. "'"
 end
 
+function l2r:onLogOpen()
+
+    -- log params
+    for _, item in ipairs(self.assets) do
+        local params = 
+            { SEC_PRICE_STEP = getParamEx(item.class, item.asset, "SEC_PRICE_STEP")
+            , STEPPRICE = getParamEx(item.class, item.asset, "STEPPRICE")
+            , BUYDEPO = getParamEx(item.class, item.asset, "BUYDEPO")
+            , SELDEPO = getParamEx(item.class, item.asset, "SELDEPO")
+            , PRICEMIN = getParamEx(item.class, item.asset, "PRICEMIN")
+            , PRICEMAX = getParamEx(item.class, item.asset, "PRICEMAX")
+            }
+        self:logItem { event="onParams", class=item.class, asset=item.asset, params=params }
+    end
+    
+    -- log historical trades
+    local n = getNumberOf("all_trades")
+    local first = 0
+    local counts = { }
+    local cc = 0
+    local MIN_TRADES = 1000
+
+    for _, item in ipairs(self.assets) do
+        counts[ item.class .. item.asset] = { c = 0 }
+        cc = cc + 1
+    end
+
+    for i = 1, n do
+        local trade = getItem("all_trades", n - i)
+        local c = counts[ trade.class_code .. trade.sec_code ]
+        if c then
+            c.c = c.c + 1
+            if c.c == MIN_TRADES then
+                cc = cc - 1
+                if cc == 0 then
+                    first = n - i
+                    break
+                end
+            end
+        end
+    end
+    for i = first,n do
+        local trade = getItem("all_trades", n - i)
+        local c = counts[ trade.class_code .. trade.sec_code ]
+        if c then
+            self:logItem { event="onLogTrade", trade=trade }
+        end
+    end
+end
+
 function l2r:checkLog()
-    local name = os.date(self.log.namePattern)
+    local name = q_fname.root .. os.date(self.log.namePattern)
     if name ~= self.log.name then
         if self.log.file then
             self.log.file:close()
         end
         self.log.name = name
         self.log.file = assert(io.open(name, "a+"))
+        self:onLogOpen()
     end
     if not self.log.file then
         message("name='" .. name .. "'", 3)

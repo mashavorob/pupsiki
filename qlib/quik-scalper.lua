@@ -75,7 +75,7 @@ local q_scalper = {
     },
 
     ui_mapping = {
-        { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" },
+        { name="position", title="Позиция", ctype=QTABLE_STRING_TYPE, width=10, format="%.0f" },
         { name="trends", title="Трэнды", ctype=QTABLE_STRING_TYPE, width=25, format="%.3f" },
         { name="averages", title="Средние", ctype=QTABLE_STRING_TYPE, width=45, format="%.3f" },
         { name="deviations", title="Отклонения", ctype=QTABLE_STRING_TYPE, width=20, format="%.3f" },

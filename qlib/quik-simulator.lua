@@ -61,7 +61,7 @@ local params =
             , BUYDEPO           = { param_value = 6000   } -- гарантийное обеспечение продавца
             , SELDEPO           = { param_value = 6000   } -- гарантийное обеспечение покупателя
             , PRICEMIN          = { param_value = 28000  } -- максимальная цена
-            , PRICEMIN          = { param_value = 280000 } -- минимальная цена 
+            , PRICEMAX          = { param_value = 280000 } -- минимальная цена 
             }
         }
     }
@@ -155,7 +155,46 @@ function evQueue:flushEvents()
             assert(false)
         end
     end
+    self:printState()
     self.events = {}
+end
+
+function evQueue:printHeaders()
+    local ln = nil
+    for _,col in ipairs(self.strategy.ui_mapping) do
+        ln = ((ln == nil and "") or (ln .. ",")) .. col.name
+    end
+    io.stderr:write(ln .. "\n")
+end
+
+function evQueue:printEnd()
+    io.stderr:write("end.\n\n")
+end
+
+QTABLE_DOUBLE_TYPE = 1
+QTABLE_INT64_TYPE = 2
+QTABLE_STRING_TYPE = 3
+QTABLE_CACHED_STRING_TYPE = 4
+
+local numericTypes = 
+    { [QTABLE_DOUBLE_TYPE] = true
+    , [QTABLE_INT64_TYPE] = true
+    }
+
+local stringTypes =
+    { [QTABLE_STRING_TYPE] = true
+    , [QTABLE_CACHED_STRING_TYPE] = true
+    }
+
+function evQueue:printState()
+    local ln = nil
+    for _,col in ipairs(self.strategy.ui_mapping) do
+        local val = self.strategy.ui_state[col.name]
+        local s = nil
+        pcall( function() s = string.format(col.format, val) end )
+        ln = ((ln == nil and "") or (ln .. ",")) .. (s or tostring(val))
+    end
+    io.stderr:write(ln .. "\n")
 end
 
 function Subscribe_Level_II_Quotes(class, asset)
@@ -227,7 +266,12 @@ function q_simulator.runStrategy(sname, data)
     evQueue.strategy = assert(factory.create(etc))
     evQueue.strategy:init()
 
+    evQueue:printHeaders()
+    evQueue:printState()
+
     evQueue.strategy:onStartTrading()
+
+    evQueue:printState()
 
     for i, rec in ipairs(data) do
         if rec.event == "onQuote" then
@@ -252,6 +296,8 @@ function q_simulator.runStrategy(sname, data)
         end
     end
     tables:syncTables()
+
+    evQueue:printEnd()
 
     return tables:getMargin()
 end
