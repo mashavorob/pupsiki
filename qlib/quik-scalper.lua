@@ -248,8 +248,9 @@ function strategy:init()
     -- walk through all trade
     local n = getNumberOf("all_trades")
     local first = math.max(0, n - HISTORY_TO_ANALYSE)
-    --assert(n > 0, "“аблица всех сделок пуста€, старт невозможен\n")
-    --assert(n - first > MIN_HISTORY, "Ќедостаточно исторических данных, старт невозможен\n")
+    assert(n > 0, "“аблица всех сделок пуста€, старт невозможен\n")
+    assert(n - first >= MIN_HISTORY, "Ќедостаточно исторических данных, старт невозможен\n")
+
     
     self.state.lotSize:onValue(1)
     self.state.phase = PHASE_INIT
@@ -304,6 +305,10 @@ end
 function strategy:onStartTrading()
     self.state.pause = false
     self.state.halt = false
+end
+
+function strategy:isHalted()
+    return self.state.halt
 end
 
 function strategy:onStartStopCallback()
@@ -365,13 +370,13 @@ function strategy:checkL2(update)
         count = count + (o.quantity + b.quantity)/i
     end
     price = price/count
-
+    
     if update or price ~= prevPrice then
         prevPrice = price
 
         self.state.fastPrice:onValue(price)
         self.state.slowPrice:onValue(price)
-
+        
         self:calcMarketParams(l2)
 
         return true
@@ -382,7 +387,6 @@ function strategy:onQuote(class, asset)
     if class ~= self.etc.class or asset ~= self.etc.asset then
         return
     end
-
     if self:checkL2() then
         self:updatePosition()
         self:onMarketShift()

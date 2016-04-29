@@ -63,7 +63,7 @@ function book:onQuote(l2Snap)
     self.l2Snap = book.makeCopy(self.originalL2Snap)
     local evs = self:updateBookWithOrder(self.l2Snap, self.order)
     table.insert(evs, {name="OnQuote", data={class=self.class, asset=self.asset, l2Snap=book.makeCopy(self.l2Snap, true)}})
-    if order and order.balance == 0 then
+    if self.order and self.order.balance == 0 then
         self.order = nil
     end
     return evs
@@ -77,10 +77,12 @@ function book:onTrade(trade)
     local orderUpdated = false
     if op == 'S' then
         -- sell
+        local l2Snap = self.originalL2Snap
+        local quote = l2Snap and l2Snap.bid[l2Snap.bid_count] or nil
         if buyOrder and (
-            not self.originalL2Snap 
-            or self.originalL2Snap.bid_count == 0 
-            or self.originalL2Snap.bid[self.originalL2Snap.bid_count].price < self.order.price
+            not l2Snap
+            or l2Snap.bid_count == 0 
+            or quote.price < self.order.price
             )
         then
             orderUpdated = true
@@ -94,10 +96,12 @@ function book:onTrade(trade)
         end
     else
         -- buy
+        local l2Snap = self.originalL2Snap
+        local quote = l2Snap and l2Snap.offer[1] or nil
         if sellOrder and (
-            not self.originalL2Snap
-            or self.originalL2Snap.offer_count == 0 
-            or self.originalL2Snap.offer[1].price > self.order.price
+            not l2Snap
+            or l2Snap.offer_count == 0 
+            or quote.price > self.order.price
             )
         then
             orderUpdated = true
@@ -116,7 +120,7 @@ function book:onTrade(trade)
     end
     if orderUpdated then
         table.insert(evs, {name="OnTransReply", data=self.order})
-        if self.order.quantity == 0 then
+        if self.order.balance == 0 then
             self.order.flags = math.floor(self.order.flags/2)*2
             self.order = nil
         end
@@ -143,7 +147,7 @@ function book:onOrder(trans)
             msg = string.format("Order with key %s does not exists", trans.ORDER_KEY)
         end
     elseif trans.ACTION == "NEW_ORDER" then
-        assert(not self.order, "multiple orders are not supported")
+        assert(not self.order, "multiple orders are not supported, self.order=" .. tostring(self.order))
         self.order = self:makeOrder(trans)
         self.l2Snap = book.makeCopy(self.originalL2Snap)
         local prevHoldings = { pos = self.pos, paid = self.paid, deals = self.deals }

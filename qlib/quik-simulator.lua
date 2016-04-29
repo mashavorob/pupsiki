@@ -22,7 +22,7 @@ local etc = {
     firmid =  "SPBFUT589000",
     sname = "quik-scalper",
 
-    asset = 'SiH6',
+    asset = 'SiM6',
     class = "SPBFUT",
 }
 
@@ -99,7 +99,7 @@ function tables:syncTables()
                     price = book.l2Snap.bid[book.l2Snap.bid_count].price
                 end
             elseif book.pos < 0 then
-                depo = depo - book.pos*params[class][asset].SELLDEPO.param_value
+                depo = depo - book.pos*params[class][asset].SELDEPO.param_value
                 local price = 0
                 if book.l2Snap.offer_count > 0 then
                     price = book.l2Snap.offer[1].price
@@ -149,30 +149,32 @@ function evQueue:enqueueEvents(evs)
 end
 
 function evQueue:flushEvents()
-    for _,ev in ipairs(self.events) do
+    local events = self.events
+    self.events = {}
+
+    for _,ev in ipairs(events) do
         if ev.name == "OnQuote" then
             self.strategy:onQuote(ev.data.class, ev.data.asset)
         elseif ev.name == "OnAllTrade" then
             table.insert(tables.all_trades, ev.data)
+            if #tables.all_trades > 5000 then
+                table.remove(tables.all_trades, 1)
+            end
             self.strategy:onAllTrade(ev.data)
         elseif ev.name == "OnTransReply" then
             self.strategy:onTransReply(ev.data)
         elseif ev.name == "OnTrade" then
             self.strategy:onTrade(ev.data)
-        elseif ev.name == "OnParam" then
-            params:updateParams(ev.class, ev.asset, ev.params)        
-        elseif ev.name == "OnLoggedTrade" then
-            table.insert(tables.all_trades, ev.trade)
         else
             print("Unknown event type: ", ev.name)
             assert(false)
         end
     end
     self:printState()
-    self.events = {}
 end
 
 function evQueue:printHeaders()
+    io.stderr:write("# vi: ft=text:fenc=cp1251\n")
     local ln = nil
     for _,col in ipairs(self.strategy.ui_mapping) do
         ln = ((ln == nil and "") or (ln .. ",")) .. col.name
@@ -200,6 +202,7 @@ local stringTypes =
     }
 
 function evQueue:printState()
+    evQueue.strategy:onIdle()
     local ln = nil
     for _,col in ipairs(self.strategy.ui_mapping) do
         local val = self.strategy.ui_state[col.name]
@@ -236,14 +239,13 @@ function getQuoteLevel2(class, asset)
 end
 
 function sendTransaction(trans)
-    print(string.format("sendTransaction(%s, %s)", trans.class_code, trans.sec_code))
-    local book = books:getBook(trans.class_code, trans.sec_code)
+    local book = books:getBook(trans.CLASSCODE, trans.SECCODE)
     assert(book)
     local evs, msg = book:onOrder(trans)
     if evs then
         evQueue:enqueueEvents(evs)
     end
-    return msg
+    return msg or ""
 end
 
 bit = {}
@@ -264,9 +266,41 @@ function bit.band(n, f)
     return res
 end
 
+function q_simulator.preProcessData(data)
+    for i, rec in ipairs(data) do
+        if rec.event == "onQuote" then
+            local l2 = rec.l2
+            l2.bid_count = tonumber(l2.bid_count)
+            l2.offer_count = tonumber(l2.offer_count)
+
+            for i = 1,l2.bid_count do
+                local q = l2.bid[i]
+                q.price = tonumber(q.price)
+                q.quantity = tonumber(q.quantity)
+            end
+            for i = 1,l2.offer_count do
+                local q = l2.offer[i]
+                q.price = tonumber(q.price)
+                q.quantity = tonumber(q.quantity)
+            end
+        end
+    end
+end
+
 function q_simulator.runStrategy(sname, data)
 
     print(string.format("q_simulator.runStrategy(%s, %s)", tostring(sname), tostring(data)))
+
+    -- assume data starts with parameters and logged trades
+    for i, rec in ipairs(data) do
+        if rec.event == "OnParams" then
+            params:updateParams(rec.class, rec.asset, rec.params)        
+        elseif rec.event == "OnLoggedTrade" then
+            table.insert(tables.all_trades, rec.trade)
+        else
+            break
+        end
+    end
 
     etc.sname = sname or etc.sname
 
@@ -284,9 +318,10 @@ function q_simulator.runStrategy(sname, data)
 
     evQueue.strategy:onStartTrading()
 
-    evQueue:printState()
+    local count = 0
 
     for i, rec in ipairs(data) do
+        count = i
         if rec.event == "onQuote" then
             local book = books:getBook(rec.class, rec.asset, true)
             if book then
@@ -299,11 +334,22 @@ function q_simulator.runStrategy(sname, data)
                 local evs = book:onTrade(rec.trade)
                 evQueue:enqueueEvents(evs)
             end
+        elseif rec.event == "OnParams" then
+            -- just ignore
+        elseif rec.event == "OnLoggedTrade" then
+            -- just ignore
         else
             print("Unknown event type: ", rec.event)
             assert(false)
         end
+
+        evQueue.strategy:onIdle()
+       
         evQueue:flushEvents()
+        if evQueue.strategy:isHalted() then
+            break
+        end
+
         if i % 10 == 0 then
             tables:syncTables()
         end
@@ -312,5 +358,10 @@ function q_simulator.runStrategy(sname, data)
 
     evQueue:printEnd()
 
-    return tables:getMargin()
+    local margin = tables:getMargin()
+    if evQueue.strategy:isHalted() and count > 0 then
+        margin = margin*#data/count
+    end
+
+    return margin
 end

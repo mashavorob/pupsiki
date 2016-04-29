@@ -69,7 +69,6 @@ local function loadMarketData(logs)
             table.insert(container, item)
         end
     end
-
     return container
 end
 
@@ -91,6 +90,9 @@ print(string.format("op=%s strategy=%s%s", op, strategy, ll))
 
 print("loading market data")
 local container = loadMarketData(logs)
+
+print("preprocessing market data")
+q_simulator.preProcessData(container)
 
 if op == "run" then
     print(string.format("Running %s", strategy))

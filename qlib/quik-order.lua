@@ -68,7 +68,7 @@ end
 function q_order.onTransReply(reply)
     local orderObj = allOrders[reply.trans_id]
     if orderObj then
-        local n = getNumberOf("orders")
+        --[[local n = getNumberOf("orders")
         for i=1,n do
             local index = n - i
             local item = getItem("orders", index)
@@ -76,7 +76,7 @@ function q_order.onTransReply(reply)
                 orderObj:onTransReply(item)
                 break
             end
-        end
+        end]]
         orderObj:onTransReply(reply)
     end
 end
@@ -209,8 +209,7 @@ function order:onTransReply(reply)
         return
     end
     assert(reply.trans_id == self.id, "orders mismatch, expected " .. 
-        tostring(self.id) .. ", got " .. tostring(reply.trans_id) .. "\n" ..
-        debug.traceback())
+        tostring(self.id) .. ", got " .. tostring(reply.trans_id))
   
     if not self.key then
         self.key = reply.order_num
