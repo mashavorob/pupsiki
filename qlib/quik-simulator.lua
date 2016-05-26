@@ -14,177 +14,20 @@
 assert(require("qlib/quik-book"))
 assert(require("qlib/quik-fname"))
 assert(require("qlib/quik-utils"))
+assert(require("qlib/quik-functor"))
+assert(require("qlib/quik-avd"))
 
 q_simulator = {}
 
 local etc = {
     account = "SPBFUT005eC",
     firmid =  "SPBFUT589000",
-    sname = "quik-scalper",
 
     asset = 'SiM6',
     class = "SPBFUT",
+
+    maxPriceLevel = 8,
 }
-
-
-local tables = 
-    { futures_client_holding = 
-        { 
-            { sec_code = "SiH6"             -- бумага
-            , totalnet = 0                  -- позиция
-            }
-        }
-    , limit = 100000
-    , fee = 2
-    , futures_client_limits =
-        {
-            { firmid =      "SPBFUT589000"  -- код фирмы
-            , trdaccid =    "SPBFUT005B2"   -- счет
-            , cbplimit =    100000          -- лимит открытых позиций
-            , varmargin =   0               -- вариационная маржа
-            , accruedint =  0               -- накопленный доход
-            }
-        }
-    , orders = 
-        {
-        }
-    , all_trades =
-        {
-        }
-    }
-
-local params =
-    { SPBFUT = 
-        { SiH6 =
-            { SEC_PRICE_STEP    = { param_value = 1      } -- минимальный шаг цены
-            , STEPPRICE         = { param_value = 1      } -- стоимость шага цены
-            , BUYDEPO           = { param_value = 6000   } -- гарантийное обеспечение продавца
-            , SELDEPO           = { param_value = 6000   } -- гарантийное обеспечение покупателя
-            , PRICEMIN          = { param_value = 28000  } -- максимальная цена
-            , PRICEMAX          = { param_value = 280000 } -- минимальная цена 
-            }
-        }
-    }
-
-function params:updateParams(class, asset, pp)
-    local assetList = self[class]
-    if not assetList then
-        assetList = {}
-        self[class] = assetList
-    end
-    assetList[asset] = pp
-end
-
-local books = 
-    { classes = 
-        { SPBFUT =
-            { }
-        }
-    }
-
-function tables:syncTables()
-    local orders = { }
-    local holdings = { }
-    local depo = 0
-    local margin = 0
-    local deals = 0
-    for class, listOfBooks in pairs(books.classes) do
-        for asset, book in pairs(listOfBooks) do
-            table.insert(orders, book.order)
-            table.insert(holdings, {class_code=class, sec_code=asset, totalnet=book.pos})
-            local price = 0
-            if book.pos > 0 then
-                depo = depo + book.pos*params[class][asset].BUYDEPO.param_value
-                if book.l2Snap.bid_count > 0 then
-                    price = book.l2Snap.bid[book.l2Snap.bid_count].price
-                end
-            elseif book.pos < 0 then
-                depo = depo - book.pos*params[class][asset].SELDEPO.param_value
-                local price = 0
-                if book.l2Snap.offer_count > 0 then
-                    price = book.l2Snap.offer[1].price
-                end
-            end
-            marging = margin + book.pos*price/book.priceStep*book.priceStepValue - book.paid
-            deals = deals + book.deals
-        end
-    end
-    tables.orders = orders
-    tables.futures_client_holdings = holdings
-    tables.futures_client_limits.cbplimit = self.limit - depo 
-    tables.futures_client_limits.varmargin = margin
-    tables.futures_client_limits.accruedint = -deals*self.fee
-end
-
-function tables:getMargin()
-    return tables.futures_client_limits.varmargin + tables.futures_client_limits.accruedint
-end
-
-function books:getBook(class, asset, create)
-    local booksGroup = self.classes[class]
-    local book = nil
-    if booksGroup then
-        book = booksGroup[asset]
-        if book == nil and create then
-            local paramsGroup = params[class] or { }
-            local paramList = paramsGroup[asset]
-            if paramList then
-                book = q_book.create(class, asset, paramList.SEC_PRICE_STEP.param_value, paramList.STEPPRICE.param_value)
-                booksGroup[asset] = book
-            end
-        end
-    end
-    return book
-end
-
-local evQueue =
-    { events = {}
-    , strategy = nil
-    }
-
-function evQueue:enqueueEvents(evs)
-    for _, ev in ipairs(evs) do
-        table.insert(self.events, ev)
-    end
-end
-
-function evQueue:flushEvents()
-    local events = self.events
-    self.events = {}
-
-    for _,ev in ipairs(events) do
-        if ev.name == "OnQuote" then
-            self.strategy:onQuote(ev.data.class, ev.data.asset)
-        elseif ev.name == "OnAllTrade" then
-            table.insert(tables.all_trades, ev.data)
-            if #tables.all_trades > 5000 then
-                table.remove(tables.all_trades, 1)
-            end
-            self.strategy:onAllTrade(ev.data)
-        elseif ev.name == "OnTransReply" then
-            self.strategy:onTransReply(ev.data)
-        elseif ev.name == "OnTrade" then
-            self.strategy:onTrade(ev.data)
-        else
-            print("Unknown event type: ", ev.name)
-            assert(false)
-        end
-    end
-    self:printState()
-end
-
-function evQueue:printHeaders()
-    io.stderr:write("# vi: ft=text:fenc=cp1251\n")
-    local ln = nil
-    for _,col in ipairs(self.strategy.ui_mapping) do
-        ln = ((ln == nil and "") or (ln .. ",")) .. col.name
-    end
-    io.stderr:write(ln .. "\n")
-end
-
-function evQueue:printEnd()
-    io.stderr:write("end.\n\n")
-end
 
 QTABLE_DOUBLE_TYPE = 1
 QTABLE_INT64_TYPE = 2
@@ -201,74 +44,87 @@ local stringTypes =
     , [QTABLE_CACHED_STRING_TYPE] = true
     }
 
-function evQueue:printState()
-    evQueue.strategy:onIdle()
-    local ln = nil
-    for _,col in ipairs(self.strategy.ui_mapping) do
-        local val = self.strategy.ui_state[col.name]
-        local s = nil
-        pcall( function() s = string.format(col.format, val) end )
-        ln = ((ln == nil and "") or (ln .. ",")) .. (s or tostring(val))
-    end
-    io.stderr:write(ln .. "\n")
-end
-
 function Subscribe_Level_II_Quotes(class, asset)
-    print(string.format("Subscribe_Level_II_Quotes(%s, %s)", class, asset))
 end
 
-function getNumberOf(tname)
-    local t = tables[tname] or { }
+function getNumberOf(name)
+    local functor = q_functor.getInstance()
+    local t = functor and functor.q_tables[name] or { }
     return #t
 end
 
-function getItem(tname, index)
-    local t = tables[tname] or { }
-    return t[index + 1]    
+function getItem(name, index)
+    local functor = q_functor.getInstance()
+    local t = functor and functor.q_tables[name] or { }
+    local row = t[index + 1]
+    return row
 end
 
 function getParamEx(class, asset, pname)
-    local assets = params[class] or { }
+    local functor = q_functor.getInstance()
+    local assets = functor and functor.q_params[class] or { }
     local paramsTable = assets[asset] or { }
     return paramsTable[pname]
 end
 
 function getQuoteLevel2(class, asset)
-    local book = books:getBook(class, asset)
+    local functor = q_functor.getInstance()
+    local book = functor and functor.q_books:getBook(class, asset) or nil
     return book and book:getL2Snapshot() or q_book.getEmptyBook()
 end
 
 function sendTransaction(trans)
-    local book = books:getBook(trans.CLASSCODE, trans.SECCODE)
+    local functor = q_functor.getInstance()
+    assert(functor)
+    
+    local book = functor.q_books:getBook(trans.CLASSCODE, trans.SECCODE)
     assert(book)
     local evs, msg = book:onOrder(trans)
     if evs then
-        evQueue:enqueueEvents(evs)
+        functor.q_events:enqueueEvents(evs)
     end
     return msg or ""
 end
 
 bit = {}
 
-function bit.band(n, f)
-    local mult = 1
-    local res = 0
-    n = math.floor(n)
-    f = math.floor(f)
-    while n ~= 0 and f ~= 0 do
-        if (n % 2) ~= 0 and (f % 2) ~= 0 then
-            res = res + mult
-        end
-        mult = mult*2
-        n = math.floor(n/2)
-        f = math.floor(f/2)
-    end
-    return res
+function bit.band(a, b)
+    return bit32.band(a, b)
 end
 
+
 function q_simulator.preProcessData(data)
+    
+    local emptyQuote = 
+        { price = 0
+        , quantity = 0 
+        }
+
+    local function hashQuote(q)
+
+        local h = ""
+        local bid_count = tonumber(q.bid_count)
+        for i = 1,etc.maxPriceLevel do
+            local bid = (q.bid or {})[tonumber(bid_count) - i + 1] or emptyQuote
+            local offer = (q.offer or {})[i] or emptyQuote
+            h = h .. 
+                "b" .. tostring(bid.price) .. ":" .. tostring(bid.quantity) .. 
+                "q" .. tostring(offer.price) .. ":" .. tostring(offer.quantity) .. "-"
+        end
+        return h
+    end
+
+    local newData = {}
+    local prevQuoteHash = nil
+
     for i, rec in ipairs(data) do
-        if rec.event == "onQuote" then
+        if rec.event == "OnLoggedTrade" and rec.trade.sec_code ~= etc.asset then 
+            -- filter out
+        elseif rec.event == "onTrade" and rec.trade.sec_code ~= etc.asset then 
+            -- filter out
+        elseif rec.event == "onQuote" and rec.asset ~= etc.asset then
+            -- filter out
+        elseif rec.event == "onQuote" then
             local l2 = rec.l2
             l2.bid_count = tonumber(l2.bid_count)
             l2.offer_count = tonumber(l2.offer_count)
@@ -283,85 +139,40 @@ function q_simulator.preProcessData(data)
                 q.price = tonumber(q.price)
                 q.quantity = tonumber(q.quantity)
             end
+
+            local hash = hashQuote(l2)
+            if hash ~= prevQuoteHash then
+                prevQuoteHash = hash
+                table.insert(newData, rec)
+            end
+        else
+            table.insert(newData, rec)
         end
     end
+
+    print("Original data was: ", #data)
+    print("Filtered data was: ", #newData)
+    print(string.format("ratio:\t%.1f%%", (#data - #newData)*100/#data))
+    return newData
 end
 
-function q_simulator.runStrategy(sname, data)
+function q_simulator.runStrategy(name, data)
 
-    print(string.format("q_simulator.runStrategy(%s, %s)", tostring(sname), tostring(data)))
+    print(string.format("q_simulator.runStrategy(%s, %s)", tostring(name), tostring(data)))
 
-    -- assume data starts with parameters and logged trades
-    for i, rec in ipairs(data) do
-        if rec.event == "OnParams" then
-            params:updateParams(rec.class, rec.asset, rec.params)        
-        elseif rec.event == "OnLoggedTrade" then
-            table.insert(tables.all_trades, rec.trade)
-        else
-            break
-        end
+    local functor = q_functor.create(name, data, etc)
+    local res = functor:func()
+    return res
+end
+
+function q_simulator.optimizeStrategy(name, data)
+
+    print(string.format("q_simulator.optimizeStrategy(%s, %s)", tostring(name), tostring(data)))
+    
+    local functor = q_functor.create(name, data, etc)
+    local before, after, clone = avd.maximize(functor)
+    if clone == nil then
+        return
     end
-
-    etc.sname = sname or etc.sname
-
-    assert(require("qlib/" .. etc.sname))
-
-    etc.account = q_utils.getAccount() or etc.account
-    etc.firmid = q_utils.getFirmID() or etc.firmid
-
-    local factory = assert(_G[etc.sname])
-    evQueue.strategy = assert(factory.create(etc))
-    evQueue.strategy:init()
-
-    evQueue:printHeaders()
-    evQueue:printState()
-
-    evQueue.strategy:onStartTrading()
-
-    local count = 0
-
-    for i, rec in ipairs(data) do
-        count = i
-        if rec.event == "onQuote" then
-            local book = books:getBook(rec.class, rec.asset, true)
-            if book then
-                local evs = book:onQuote(rec.l2)
-                evQueue:enqueueEvents(evs)
-            end
-        elseif rec.event == "onTrade" then
-            local book = books:getBook(rec.trade.class_code, rec.trade.sec_code, true)
-            if book then
-                local evs = book:onTrade(rec.trade)
-                evQueue:enqueueEvents(evs)
-            end
-        elseif rec.event == "OnParams" then
-            -- just ignore
-        elseif rec.event == "OnLoggedTrade" then
-            -- just ignore
-        else
-            print("Unknown event type: ", rec.event)
-            assert(false)
-        end
-
-        evQueue.strategy:onIdle()
-       
-        evQueue:flushEvents()
-        if evQueue.strategy:isHalted() then
-            break
-        end
-
-        if i % 10 == 0 then
-            tables:syncTables()
-        end
-    end
-    tables:syncTables()
-
-    evQueue:printEnd()
-
-    local margin = tables:getMargin()
-    if evQueue.strategy:isHalted() and count > 0 then
-        margin = margin*#data/count
-    end
-
-    return margin
+    return before, after, clone.params
 end

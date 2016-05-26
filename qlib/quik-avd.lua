@@ -13,16 +13,35 @@
 
 avd = {}
 
-local function maximizeParam(func, max, index)
+local function hashParams(func)
+    local hash = ""
+    for _,info in ipairs(func.params) do
+        hash = hash .. info.name .. ":" .. tostring( func["get_" .. info.name](func) ) .. " "
+    end
+    return hash
+end
+
+local function roundStep(info, step)
+    if not step then
+        step = info.step
+        if info.relative then
+            step = step*(info.max - info.min)
+        end
+    end
+    local prec = info.precision
+    if info.relative then
+        prec = prec*(info.max - info.min)
+    end
+    assert(prec > 0)
+    return math.floor(step/prec + 0.5)*prec
+end
+
+local function maximizeParam(cache, func, max, index)
     local info = func.params[index]
 
     local direction = 1
-    local step = info.step
-    local precision = info.precision
-    if info.relative then
-        step = step*(info.max - info.min)
-        precision = precision*step
-    end
+    local step = roundStep(info)
+    assert(step > 0)
 
     local function getParam(self)
         return self["get_" .. info.name](self)
@@ -31,9 +50,15 @@ local function maximizeParam(func, max, index)
         self["set_" .. info.name](self, p)
     end
 
-    print("Optimizing '" .. info.name .. "':\n")
+    print("Optimizing '" .. info.name)
+    print("Initial param value:", getParam(func))
+    print("     Function value:", max)
+    print("               Step:", step)
+    print("")
 
-    while step > precision do
+    cache[hashParams(func)] = max
+
+    while step > 0 do
         local val = max
         for i = 1,2 do
             -- make clone
@@ -45,18 +70,26 @@ local function maximizeParam(func, max, index)
                 param = info.max
             end
             setParam(clone, param)
+            local hash = hashParams(clone)
             print(info.name .. " = " .. getParam(clone))
             if param ~= getParam(func) then
-                val = clone:func()
+                local cachedVal = cache[hash]
+                if cachedVal ~= nil then
+                    val = cachedVal
+                    print("cached value found")
+                else
+                    val = clone:func()
+                    cache[hash] = val
+                end
                 if val > max then
-                    print("result: " .. val .. " (improved)")
+                    print(string.format("result: %f, best was %f|%s=%f (improved)", val, max, info.name, getParam(func)))
                     setParam(func, getParam(clone))
                     break
                 end
             else
                 print("Value calculated on one of the previous steps is used") 
             end
-            print("result: " .. val .. " (try other direction if possible)")
+            print(string.format("result: %f, best is: %f|%s=%f (try other direction if possible)", val, max, info.name, getParam(func)))
             direction = direction*(-1)
         end
         
@@ -64,8 +97,8 @@ local function maximizeParam(func, max, index)
             print("following the same direction")
             max = val
         else
-            print("try to reduce step")
-            step = step/2
+            step = roundStep(info, step/2)
+            print("Step has been reduced:", step)
         end
         print("")
     end
@@ -114,15 +147,17 @@ end
 
 local function maximizeAllParams(func)
     print("calculate central value")
-    local max = func:func()
-    local newMax = max
+    local before = func:func()
+    print("central value is:", before)
+    local max, newMax = before, before
     local clone = makeClone(func)
     local found = false
+    local cache = {}
 
     while true do
 
         for i,_ in ipairs(func.params) do
-            newMax = maximizeParam(clone, newMax, i)
+            newMax = maximizeParam(cache, clone, newMax, i)
         end
         if newMax <= max then
             break
@@ -142,7 +177,7 @@ local function maximizeAllParams(func)
         print("Better parameters not found")
         return
     end
-    return clone
+    return before, max, clone
 end
 
 --[[
@@ -183,7 +218,7 @@ function avd.getTestSuite()
             return res
         end
 
-        local res = avd.maximize(func)
+        local before, after, res = avd.maximize(func)
         assert(nil == res)
         assert(0 == func.x)
     end
@@ -200,7 +235,7 @@ function avd.getTestSuite()
             return res
         end
 
-        local res = avd.maximize(func)
+        local before, after, res = avd.maximize(func)
         assert(nil ~= res)
         assert(math.abs(res.x) <= func.params[1].precision)
     end
@@ -217,7 +252,7 @@ function avd.getTestSuite()
             return res
         end
 
-        local res = avd.maximize(func)
+        local before, after, res = avd.maximize(func)
         assert(nil ~= res)
         assert(math.abs(res.x) <= func.params[1].precision)
     end
@@ -234,7 +269,7 @@ function avd.getTestSuite()
             return res
         end
 
-        local res = avd.maximize(func)
+        local before, after, res = avd.maximize(func)
         assert(nil == res)
     end
     function testSuite.test_1d_right()
@@ -250,7 +285,7 @@ function avd.getTestSuite()
             return res
         end
 
-        local res = avd.maximize(func)
+        local before, after, res = avd.maximize(func)
         assert(nil ~= res)
         assert(math.abs(res.x - 1) < func.params[1].precision)
     end
@@ -267,7 +302,7 @@ function avd.getTestSuite()
             return res
         end
 
-        local res = avd.maximize(func)
+        local before, after, res = avd.maximize(func)
         assert(nil == res)
     end
     function testSuite.test_1d_left()
@@ -283,7 +318,7 @@ function avd.getTestSuite()
             return res
         end
 
-        local res = avd.maximize(func)
+        local before, after, res = avd.maximize(func)
         assert(nil ~= res)
         assert(math.abs(res.x + 1) < func.params[1].precision)
     end
@@ -302,7 +337,7 @@ function avd.getTestSuite()
             return res
         end
 
-        local res = avd.maximize(func)
+        local before, after, res = avd.maximize(func)
         assert(nil ~= res)
         assert(math.abs(res.x) < func.params[1].precision)   
         assert(math.abs(res.y) < func.params[2].precision)   
@@ -327,7 +362,7 @@ function avd.getTestSuite()
             return c
         end
 
-        local res = pcall(avd.maximize, func)
+        local before, after, res = avd.maximize(func)
         assert(not res)
     end
     function testSuite.test_2d_func()
@@ -362,7 +397,7 @@ function avd.getTestSuite()
             self.y_ = y
         end
 
-        local res = avd.maximize(func)
+        local before, after, res = avd.maximize(func)
         assert(nil ~= res)
         assert(math.abs(res:get_x()) < func.params[1].precision)   
         assert(math.abs(res:get_y()) < func.params[2].precision)   

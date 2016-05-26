@@ -65,7 +65,7 @@ function qtable.create(posfile, title, cols)
     posfile = q_fname.normalize(posfile)
 
     local function Dummy() end
-    self = { 
+    local self = { 
         id=assert(AllocTable()),
         caption=title,
         columns=cols,

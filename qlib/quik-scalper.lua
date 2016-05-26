@@ -39,8 +39,8 @@ local q_scalper = {
 
         maxLoss = 1000,                 -- максимальная приемлимая потеря
 
-        avgFactorFast = 80,             -- "быстрый" коэффициент осреднения
-        avgFactorSlow = 700,            -- "медленный" коэфициент осреднения
+        avgFactorFast = 500,            -- "быстрый" коэффициент осреднения
+        avgFactorSlow = 2437,           -- "медленный" коэфициент осреднения
         avgFactorLot = 200,             -- коэффициент осреднения размера лота (сделки)
 
         maxAverageLots = 100,           -- ставить позиции не далее этого количества средних лотов
@@ -61,8 +61,10 @@ local q_scalper = {
         maxQuiteTime = 5,               -- максимальное время ожидания
 
         params = {
-            { name="avgFactorFast", min=1, max=1e32, step=1, precision=1e-4 },
-            { name="avgFactorSlow", min=1, max=1e32, step=1, precision=1e-4 },
+            { name="avgFactorSlow", min=1, max=1e32, step=500, precision=5 },
+            { name="avgFactorFast", min=1, max=1e32, step=100, precision=5 },
+            { name="nearForecast", min=1, max=1e32, step=5, precision=1 },
+            { name="farForecast", min=1, max=1e32, step=5, precision=1 },
         },
         -- расписание работы
         schedule = {
@@ -89,7 +91,14 @@ local q_scalper = {
 
 _G["quik-scalper"] = q_scalper
 
-local strategy = {}
+local strategy = {
+    sellVolume = 0,
+    buyVolume = 0,
+    prevPrice = -1,
+    lastTrend = 0,
+    volCount = 0,
+    prevVolCount = 0,
+}
 
 local PHASE_INIT                = 1
 local PHASE_WAIT                = 2
@@ -177,7 +186,6 @@ function q_scalper.create(etc)
 
     setmetatable(self, { __index = strategy })
 
-    self.etc.limit = self:getLimit()
     self.title = string.format( "%s - [%s]"
                               , self.title
                               , self.etc.asset
@@ -205,6 +213,9 @@ function strategy:checkSchedule(now)
 end
 
 function strategy:getLimit()
+    assert(self.etc.relPositionLimit)
+    local val = q_utils.getMoneyLimit(self.etc.account)
+    assert(val)
     local moneyLimit = q_utils.getMoneyLimit(self.etc.account)*self.etc.relPositionLimit
     local buyLimit = math.floor(moneyLimit/q_utils.getBuyDepo(self.etc.class, self.etc.asset))
     local sellLimit = math.floor(moneyLimit/q_utils.getBuyDepo(self.etc.class, self.etc.asset))
@@ -229,6 +240,8 @@ function strategy:init()
 
     self.etc.account = q_utils.getAccount() or self.etc.account
     self.etc.firmid = q_utils.getFirmID() or self.etc.firmid
+
+    self.etc.limit = self:getLimit()
 
     local balance = q_utils.getBalance(self.etc.account)
     self.state.balance.atStart = balance
@@ -332,9 +345,6 @@ function strategy:onTrade(trade)
     q_order.onTrade(trade)
 end
 
-local sellVolume = 0
-local buyVolume = 0
-
 function strategy:onAllTrade(trade)
     if trade.class_code ~= self.etc.class or trade.sec_code ~= self.etc.asset then
         return
@@ -343,14 +353,13 @@ function strategy:onAllTrade(trade)
 
     if bit.band(trade.flags, 1) ~= 0 then
         -- продажа
-        sellVolume = sellVolume + trade.qty
+        self.sellVolume = self.sellVolume + trade.qty
     else
         -- покупка
-        buyVolume = buyVolume + trade.qty
+        self.buyVolume = self.buyVolume + trade.qty
     end
 end
 
-local prevPrice = -1
 
 function strategy:checkL2(update)
     local l2 = self:getQuoteLevel2()
@@ -371,8 +380,8 @@ function strategy:checkL2(update)
     end
     price = price/count
     
-    if update or price ~= prevPrice then
-        prevPrice = price
+    if update or price ~= self.prevPrice then
+        self.prevPrice = price
 
         self.state.fastPrice:onValue(price)
         self.state.slowPrice:onValue(price)
@@ -466,9 +475,9 @@ function strategy:onIdle()
         ui_state.spread = "-- / -- (--)"
     end
     ui_state.volume = string.format( "%.0f / %.0f / %.0f"
-                                   , buyVolume - sellVolume
-                                   , buyVolume
-                                   , sellVolume
+                                   , self.buyVolume - self.sellVolume
+                                   , self.buyVolume
+                                   , self.sellVolume
                                    )
                                    
     local balance = q_utils.getBalance(self.etc.account)
@@ -578,10 +587,6 @@ function strategy:getForwardPrice(shift)
     return self.state.market.fastTrend*shift + self.state.market.fastTrend2*math.pow(shift, 2)/2
 end
 
-local lastTrend = 0
-local volCount = 0
-local prevVolCount = 0
-
 -- function returns operation, price
 function strategy:calcPlannedPos()
 
@@ -599,6 +604,7 @@ function strategy:calcPlannedPos()
                                         , etc.maxLoss
                                         )
         state.plannedPos.op = false
+        self.state.halt = true
         return
     end
 
@@ -636,22 +642,22 @@ function strategy:calcPlannedPos()
     end
 
     if math.abs(market.fastTrend) > etc.maxTrend then
-        lastTrend = market.fastTrend
-        if prevVolCount > volCount or volCount == 0 then
-            volCount = math.min(etc.maxQuiteTime, volCount + etc.volQuiteTime)
-            prevVolCount = volCount
+        self.lastTrend = market.fastTrend
+        if self.prevVolCount > self.volCount or self.volCount == 0 then
+            self.volCount = math.min(etc.maxQuiteTime, self.volCount + etc.volQuiteTime)
+            self.prevVolCount = self.volCount
         end
     end
 
-    local volIndicator = lastTrend*market.fastTrend
+    local volIndicator = self.lastTrend*market.fastTrend
     if volIndicator <= 0 then
-        prevVolCount = volCount
-        volCount = (volCount > 0) and (volCount - 1) or 0
-        lastTrend = (volCount > 0) and market.fastTrend or 0
+        self.prevVolCount = self.volCount
+        self.volCount = (self.volCount > 0) and (self.volCount - 1) or 0
+        self.lastTrend = (self.volCount > 0) and market.fastTrend or 0
     end
-    if volIndicator > 0 or volCount > 0 then
+    if volIndicator > 0 or self.volCount > 0 then
         state.plannedPos.op = false
-        self.state.state = "Высокая волатильность (" .. volCount .. ")"
+        self.state.state = "Высокая волатильность (" .. self.volCount .. ")"
     end
 
     if state.plannedPos.op then

@@ -51,12 +51,11 @@ end
 
 local function loadLogFile(fname)
     local file = assert(io.open(fname,"r"))
-    local text = "data = {" .. file:read("*all") .. "}"
+    local text = "return {" .. file:read("*all") .. "}"
     local fn = loadstring(text)
-    local res = { }
-    setfenv(fn, res)
-    if pcall(fn) then
-        return res.data
+    local status, data = pcall(fn)
+    if status then
+        return data
     end
 end
 
@@ -73,9 +72,25 @@ local function loadMarketData(logs)
 end
 
 local function runStrategy(strategy, container)
-
     local margin = q_simulator.runStrategy(strategy, container)
     print(string.format("total margin: %f", margin))
+    local margin = q_simulator.runStrategy(strategy, container)
+    print(string.format("total margin: %f", margin))
+end
+
+local function optimizeStrategy(strategy, container)
+    local before, after, params = q_simulator.optimizeStrategy(strategy, container)
+
+    if params == nil then
+        print("Optimization did not find better paramters")
+    else
+        print("Optimal parameters are:")
+        for k,v in pairs(params) do
+            print(string.format("%s = %s", k, tostring(v)))
+        end
+        print(string.format("Margin before optimization: %f", before))
+        print(string.format("Margin after  optimization: %f", after))
+    end
 end
 
 print("Level 2 Market Data Player (c) 2016\n")
@@ -92,14 +107,16 @@ print("loading market data")
 local container = loadMarketData(logs)
 
 print("preprocessing market data")
-q_simulator.preProcessData(container)
+container = q_simulator.preProcessData(container)
 
 if op == "run" then
     print(string.format("Running %s", strategy))
     runStrategy(strategy, container)
 elseif op == "optimize" then
-    assert(false, "Optimization is not implemented yet")
+    print(string.format("Optimizing %s", strategy))
+    optimizeStrategy(strategy, container)
 else
     assert(false, "Operation '" .. op .. "' is not supported")
 end
+
 print("Done.")

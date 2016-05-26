@@ -330,7 +330,7 @@ if operation == "--run" or operation == "-r" then
 elseif operation == "--optimize" or operation == "-o" then
     operation = OptimizeParams
 else
-    io.stderr.write("Operation '" .. operation .. "' is not supported\n")
+    io.stderr:write("Operation '" .. operation .. "' is not supported\n")
     usage()
     os.exit(2)
 end

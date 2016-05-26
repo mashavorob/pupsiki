@@ -15,12 +15,14 @@ q_utils = { }
 
 function q_utils.getMoneyLimit(account)
     local n = getNumberOf("futures_client_limits")
+    assert(n>0)
     for i = 0, n - 1 do
         local row = getItem("futures_client_limits", i)
         if row.trdaccid == account then
             return row.cbplimit
         end
     end
+    return 0
 end
 
 function q_utils.getBalance(account)
@@ -31,6 +33,7 @@ function q_utils.getBalance(account)
             return row.cbplimit + row.varmargin + row.accruedint
         end
     end
+    return 0
 end
 
 function q_utils.getPos(asset)

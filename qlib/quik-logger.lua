@@ -93,7 +93,7 @@ function csvlog.createReader(fname)
     end
 
     local function split(s, subs)
-        subs = susbs or ","
+        subs = subs or ","
         local res = { }
         local pos, beg, end_ = 1, string.find(s, subs)
         while beg do
