@@ -1,4 +1,4 @@
-#!/usr/bin/lua
+#!/usr/bin/env luajit
 -- vi: ft=lua:fenc=cp1251 
 
 --[[
@@ -28,13 +28,19 @@ Where
 assert(require("qlib/quik-simulator"))
 assert(require("qlib/quik-l2-persist"))
 
+print("")
+print("Level 2 Market Data Player (c) 2016")
+
 -- check compatibility with Lua 5.2 and LuaJIT
---
 if bit == nil then
     print("Lua interpreter detected")
     bit = {}
     setmetatable(bit, {__index=bit32})
+else
+    print("LuaJIT detected")
 end
+
+print("")
 
 local function printHelpAndExit(code)
     print(string.format(helpMessage, arg[0]))
@@ -91,8 +97,6 @@ local function optimizeStrategy(strategy, container)
         print(string.format("Margin after  optimization: %f", after))
     end
 end
-
-print("Level 2 Market Data Player (c) 2016\n")
 
 -- Parse command line
 local op, strategy, logs = parseArgs()
