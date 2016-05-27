@@ -25,7 +25,16 @@ Where
     --help,/?   - show this message
 ]]
 
-require("qlib/quik-simulator")
+assert(require("qlib/quik-simulator"))
+assert(require("qlib/quik-l2-persist"))
+
+-- check compatibility with Lua 5.2 and LuaJIT
+--
+if bit == nil then
+    print("Lua interpreter detected")
+    bit = {}
+    setmetatable(bit, {__index=bit32})
+end
 
 local function printHelpAndExit(code)
     print(string.format(helpMessage, arg[0]))
@@ -49,21 +58,11 @@ local function parseArgs()
     return op, strategy, logs
 end
 
-local function loadLogFile(fname)
-    local file = assert(io.open(fname,"r"))
-    local text = "return {" .. file:read("*all") .. "}"
-    local fn = loadstring(text)
-    local status, data = pcall(fn)
-    if status then
-        return data
-    end
-end
-
 local function loadMarketData(logs)
     local container = {}
 
     for _, f in ipairs(logs) do
-        local fdata = loadLogFile(f)
+        local fdata = q_persist.loadL2Log(f)
         for _,item in ipairs(fdata) do
             table.insert(container, item)
         end

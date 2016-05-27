@@ -33,7 +33,7 @@ local function roundStep(info, step)
         prec = prec*(info.max - info.min)
     end
     assert(prec > 0)
-    return math.floor(step/prec + 0.5)*prec
+    return math.floor(step/prec)*prec
 end
 
 local function maximizeParam(cache, func, max, index)
@@ -50,10 +50,10 @@ local function maximizeParam(cache, func, max, index)
         self["set_" .. info.name](self, p)
     end
 
-    print("Optimizing '" .. info.name)
-    print("Initial param value:", getParam(func))
-    print("     Function value:", max)
-    print("               Step:", step)
+    print("Optimizing parameter:", info.name)
+    print(" Initial param value:", getParam(func))
+    print("      Function value:", max)
+    print("                Step:", step)
     print("")
 
     cache[hashParams(func)] = max

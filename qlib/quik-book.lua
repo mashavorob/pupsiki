@@ -77,8 +77,8 @@ function book:onTrade(trade)
     trade = proxy
 
     local evs = { }
-    local op = (bit32.band(trade.flags, 1) ~= 0) and 'S' or 'B'
-    local sellOrder = self.order and (bit32.band(self.order.flags, 4) ~= 0)
+    local op = (bit.band(trade.flags, 1) ~= 0) and 'S' or 'B'
+    local sellOrder = self.order and (bit.band(self.order.flags, 4) ~= 0)
     local buyOrder = self.order and not sellOrder
     local orderUpdated = false
     if op == 'S' then
@@ -129,7 +129,7 @@ function book:onTrade(trade)
         self.l2Snap = book.makeCopy(self.originalL2Snap)
         self:updateBookWithOrder(self.l2Snap, self.order)
         if self.order.balance == 0 then
-            self.order.flags = bit32.band(self.order.flags, bit32.bnot(1))
+            self.order.flags = bit.band(self.order.flags, bit.bnot(1))
             self.order = nil
         end
         table.insert(evs, {name="OnQuote", data={class=self.class, asset=self.asset, l2Snap=book.makeCopy(self.l2Snap, true)}})
@@ -142,7 +142,7 @@ function book:onOrder(trans)
     local msg = nil
     if trans.ACTION == "KILL_ORDER" then
         if self.order and self.order.order_num == tonumber(trans.ORDER_KEY) then
-            self.order.flags = bit32.band(self.order.flags, bit32.bnot(1))
+            self.order.flags = bit.band(self.order.flags, bit.bnot(1))
             self.order.flags = self.order.flags + 2             -- canceled
             table.insert(evs, {name="OnTransReply", data=self:makeOrder(trans)})
             table.insert(evs, {name="OnTransReply", data=self.order})
@@ -161,12 +161,12 @@ function book:onOrder(trans)
         if trans.EXECUTE_CONDITION=="KILL_OR_FILL" and self.order.balance > 0 then
             -- discard the order
             self.order = self:makeOrder(trans)
-            self.order.flags = bit32.band(self.order.flags, bit32.bnot(1))
+            self.order.flags = bit.band(self.order.flags, bit.bnot(1))
             evs = { {name="OnTransReply", data=self.order} }
             self.order = nil
             self.pos, self.paid, self.deals = prevHoldings.pos, prevHoldings.paid, prevHoldings.deals
         elseif trans.EXECUTE_CONDITION=="KILL_BALANCE" then
-            self.order.flags = bit32.band(self.order.flags, bit32.bnot(1))
+            self.order.flags = bit.band(self.order.flags, bit.bnot(1))
             table.insert(evs, {name="OnTransReply", data=self.order})
             self.order = nil
         elseif trans.EXECUTE_CONDITION=="PUT_IN_QUEUE" or 
@@ -175,7 +175,7 @@ function book:onOrder(trans)
             table.insert(evs, {name="OnTransReply", data=self.order})
             table.insert(evs, {name="OnQuote", data={class=self.class, asset=self.asset, l2Snap=book.makeCopy(self.l2Snap, true)}})
             if self.order.balance == 0 then
-                self.order.flags = bit32.band(self.order.flags, bit32.bnot(1))
+                self.order.flags = bit.band(self.order.flags, bit.bnot(1))
                 self.order = nil
             end
         else
@@ -192,7 +192,7 @@ function book:updateBookWithOrder(l2Snap, order, blockTransReply)
 
     local onOrderReply = false
 
-    local sell = order and (bit32.band(order.flags, 4) ~= 0)
+    local sell = order and (bit.band(order.flags, 4) ~= 0)
     local buy = order and not sell
      
     if sell then
@@ -271,7 +271,7 @@ function book:updateBookWithOrder(l2Snap, order, blockTransReply)
     end
     if onOrderReply then
         if order.balance == 0 then
-            self.order.flags = bit32.band(self.order.flags, bit32.bnot(1))
+            self.order.flags = bit.band(self.order.flags, bit.bnot(1))
         end
         if not blockTransReply then
             table.insert(evs, {name="OnTransReply", data=order})
@@ -890,7 +890,7 @@ function tests.testTradeBuysFromBook()
 
     assert(#evs == 3)
     assert(evs[1].name == "OnAllTrade")
-    assert(bit32.band(evs[1].data.flags, 1) ~= 0) -- sell
+    assert(bit.band(evs[1].data.flags, 1) ~= 0) -- sell
     assert(evs[1].data.price == 30)
     assert(evs[1].data.qty == 2)
 
@@ -1145,7 +1145,7 @@ function tests.testKillBalancePartial()
     assert(evs[3].name == "OnTransReply")
     assert(evs[3].data.trans_id == tonumber(o.TRANS_ID))
     assert(evs[3].data.balance == 2)
-    assert(bit32.band(evs[3].data.flags, 1) == 0)
+    assert(bit.band(evs[3].data.flags, 1) == 0)
 end
 
 function tests.testKillOrFillFull()
@@ -1223,7 +1223,7 @@ function tests.testKillOrFillPartial()
     assert(evs[1].name == "OnTransReply")
     assert(evs[1].data.trans_id == tonumber(o.TRANS_ID))
     assert(evs[1].data.balance == 12)
-    assert(bit32.band(evs[1].data.flags, 1) == 0)
+    assert(bit.band(evs[1].data.flags, 1) == 0)
 end
 
 function tests.testKillOrder()
@@ -1263,7 +1263,7 @@ function tests.testKillOrder()
     assert(evs[2].name == "OnTransReply")
     assert(evs[2].data.trans_id == tonumber(o.TRANS_ID))
     assert(evs[2].data.balance == tonumber(o.QUANTITY))
-    assert(bit32.band(evs[2].data.flags, 1) == 0)
+    assert(bit.band(evs[2].data.flags, 1) == 0)
     assert(evs[3].name == "OnQuote")
     assert(evs[3].data.l2Snap.bid_count == "0", evs[3].data.l2Snap.bid_count)
     assert(evs[3].data.l2Snap.offer_count == "0")

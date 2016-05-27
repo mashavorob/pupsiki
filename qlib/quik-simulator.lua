@@ -86,13 +86,6 @@ function sendTransaction(trans)
     return msg or ""
 end
 
-bit = {}
-
-function bit.band(a, b)
-    return bit32.band(a, b)
-end
-
-
 function q_simulator.preProcessData(data)
     
     local emptyQuote = 
