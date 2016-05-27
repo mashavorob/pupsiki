@@ -12,10 +12,22 @@
 # or enable modeline in your .vimrc
 ]]
 
-require("quik-logger")
-require("quik-etc")
-require("quik-avd")
-require("quik-book")
+assert(require("qlib/quik-jit"))
+assert(require("qlib/quik-logger"))
+assert(require("qlib/quik-etc"))
+assert(require("qlib/quik-avd"))
+assert(require("qlib/quik-book"))
+
+print("")
+print("Quik library unit tests (c) 2016")
+
+if q_jit.isJIT() then
+    print("LuaJIT detected")
+else
+    print("Lua interpreter detected")
+end
+print("")
+
 
 local unitTests = {
     csvlog = csvlog.getTestSuite(),

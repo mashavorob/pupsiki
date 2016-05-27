@@ -25,19 +25,17 @@ Where
     --help,/?   - show this message
 ]]
 
+assert(require("qlib/quik-jit"))
 assert(require("qlib/quik-simulator"))
 assert(require("qlib/quik-l2-persist"))
 
 print("")
 print("Level 2 Market Data Player (c) 2016")
 
--- check compatibility with Lua 5.2 and LuaJIT
-if bit == nil then
-    print("Lua interpreter detected")
-    bit = {}
-    setmetatable(bit, {__index=bit32})
-else
+if q_jit.isJIT() then
     print("LuaJIT detected")
+else
+    print("Lua interpreter detected")
 end
 
 print("")
