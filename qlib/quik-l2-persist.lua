@@ -1,9 +1,8 @@
-#!/usr/bin/lua
--- vi: ft=lua:fenc=cp1251 
-
 --[[
-#
+#    
 # Cериализация маркетных данных (уровень 2)
+#
+#  vi: ft=lua:fenc=cp1251 
 #
 # Если Вы можете прочитать эту строку то все нормально
 # If you cannot read the line above you editor use wrong encoding
@@ -16,7 +15,7 @@
 q_persist = {}
 
 function q_persist.loadL2Log(fname)
-    local file = assert(io.open(fname,"r"))
+    local file = fname and assert(io.open(fname,"r")) or io.stdin
     local data = {}
     for line in file:lines() do
         local text = "return {" .. line .. "}"
