@@ -13,7 +13,7 @@
 
 q_events = 
     { strategy = nil 
-    , silentMode = true
+    , silentMode = false
     , events = {}
     }
 
@@ -35,7 +35,7 @@ function q_events:flushEvents(tables)
 
     for _,ev in ipairs(events) do
         if ev.name == "OnQuote" then
-            self.strategy:onQuote(ev.class, ev.asset)
+            self.strategy:onQuote(ev.data.class, ev.data.asset)
         elseif ev.name == "OnAllTrade" then
             table.insert(tables.all_trades, ev.data)
             if #tables.all_trades > 5000 then

@@ -158,12 +158,21 @@ function q_functor:func()
     for i, rec in ipairs(self.s_params.data) do
         count = i
         if rec.event == "onQuote" then
+            self.quoteTime = rec.tstamp
+            if self.timeOffset then
+                self.now = math.floor(self.quoteTime + self.timeOffset)
+            end
             local book = self.q_books:getBook(rec.class, rec.asset, self.q_params)
             if book then
                 local evs = book:onQuote(rec.l2)
                 self.q_events:enqueueEvents(evs)
             end
         elseif rec.event == "onTrade" then
+            self.now = os.time(rec.trade.datetime)
+            if self.quoteTime then
+                self.timeOffset = math.floor(self.now - self.quoteTime)
+                self.quoteTime = nil
+            end
             local book = self.q_books:getBook(rec.trade.class_code, rec.trade.sec_code, self.q_params)
             if book then
                 local evs = book:onTrade(rec.trade)
@@ -178,7 +187,7 @@ function q_functor:func()
             assert(false)
         end
 
-        self.q_events.strategy:onIdle()
+        self.q_events.strategy:onIdle(self.now)
        
         self.q_events:flushEvents(self.q_tables)
         if self.q_events.strategy:isHalted() then

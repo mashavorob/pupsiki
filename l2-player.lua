@@ -77,8 +77,6 @@ end
 local function runStrategy(strategy, container)
     local margin = q_simulator.runStrategy(strategy, container)
     print(string.format("total margin: %f", margin))
-    local margin = q_simulator.runStrategy(strategy, container)
-    print(string.format("total margin: %f", margin))
 end
 
 local function optimizeStrategy(strategy, container)
