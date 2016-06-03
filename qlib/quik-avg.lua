@@ -13,19 +13,9 @@
 
 q_avg = { }
 
-local avg = {
-    average = false,
-    dispersion = 0,
-    deviation = 0,
-    alpha = 0,
-}
+local avg = {}
 
-local avgEx = {
-    average = { },
-    dispersion = { },
-    deviation = 0,
-    alpha = 0,
-}
+local avgEx = {}
 
 local function getAlpha(factor)
     return 2/(1 + factor)
@@ -34,9 +24,12 @@ end
 function q_avg.create(factor)
     factor = factor or 19         -- alpha = 0.1
 
-    local self = {
-        alpha = getAlpha(factor),
-    }
+    local self =
+        { average = false
+        , dispersion = 0
+        , deviation = 0
+        , alpha = getAlpha(factor),
+        }
     setmetatable(self, { __index = avg })
     return self
 end
@@ -52,11 +45,12 @@ function q_avg.createEx(factor, n)
     factor = factor or 19         -- alpha = 0.1
     n = n or 2                    -- include the second deviation
 
-    local self = {
-        alpha = getAlpha(factor),
-        average = { },
-        dispersion = { },
-    }
+    local self =
+        { alpha = getAlpha(factor)
+        , average = {}
+        , dispersion = {}
+        , deviation = 0
+        }
     for _ = 1,n do
         table.insert(self.average, 0)
         table.insert(self.dispersion, 0)

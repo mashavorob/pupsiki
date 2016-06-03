@@ -1,4 +1,4 @@
-#!/usr/bin/env luajit
+#!/usr/bin/env lua
 --[[
 # vi: ft=lua:fenc=cp1251 
 #

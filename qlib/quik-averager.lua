@@ -491,7 +491,7 @@ function strategy:onMarketShift()
             -- check deviation
             if state.order.price < market.offer - market.deviation*etc.maxDeviation then
                 -- price went tooo far, cancel the order
-                res, err = state.order.kill()
+                res, err = state.order:kill()
                 state.phase = PHASE_CANCEL
                 state.state = "Отмена ордера из-за отклонения цены" 
             end
@@ -499,7 +499,7 @@ function strategy:onMarketShift()
             -- check deviation
             if state.order.price > market.bid + market.deviation*etc.maxDeviation then
                 -- price went tooo far, cancel the order
-                res, err = state.order.kill()
+                res, err = state.order:kill()
                 state.phase = PHASE_CANCEL
                 state.state = "Отмена ордера из-за отклонения цены" 
             end

@@ -11,32 +11,19 @@
 # or enable modeline in your .vimrc
 ]]
 
-local order = {
-    asset = false,
-    class = false,
-    account = false,
+q_order = {}
 
-    operation = false,
+local order = { }
 
-    id = false,        -- TRANS_ID
-    key = false,       -- ORDER_NUM
-    status = false,    -- STATUS
+local orderStatusSuccess =
+    -- see https://forum.quik.ru/forum10/topic604/
+    { [1] = true
+    , [3] = true -- completed
+    , [4] = true
+    }
 
-    balance = 0,       -- Quantity
-    position = 0,      -- Generated position
-}
-
-local orderStatusSuccess = {}
--- see https://forum.quik.ru/forum10/topic604/
-orderStatusSuccess[1] = true
-orderStatusSuccess[3] = true -- completed
-orderStatusSuccess[4] = true
-
-local allOrders = {
-    -- id -> order
-}
-
-q_order = { }
+-- id -> order
+local allOrders = {}
 
 local transId = false
 
@@ -55,45 +42,37 @@ local function getLastTransId()
 end
 
 function q_order.create(account, class, asset)
-    local self = {}
+    local self = 
+        { account = account
+        , class = class
+        , asset = asset
+
+        , operation = false
+
+        , id = false        -- TRANS_ID
+        , key = false       -- ORDER_NUM
+        , status = false    -- STATUS
+
+        , balance = 0       -- Quantity
+        , position = 0      -- Generated position
+        }
     setmetatable(self, { __index = order })
-
-    self.account = account
-    self.class = class
-    self.asset = asset
-
     return self
 end
 
 function q_order.onTransReply(reply)
     local orderObj = allOrders[reply.trans_id]
     if orderObj then
-        --[[local n = getNumberOf("orders")
-        for i=1,n do
-            local index = n - i
-            local item = getItem("orders", index)
-            if item.trans_id == reply.trans_id then
-                orderObj:onTransReply(item)
-                break
-            end
-        end]]
         orderObj:onTransReply(reply)
     end
 end
 
 function q_order.onTrade(trade)
-    local report = "onTrade\n"
-    for k, v in pairs(trade) do
-        report = report .. k .. " = " .. type(v) .. "(" .. tostring(v) .. ")\n"
-    end
     local lastTransId = getLastTransId()
     if lastTransId > transId then
         transId = lastTransId
     end
 end
-
-local once = false
-local pcount = -1
 
 function q_order.onIdle()
     local n = getNumberOf("orders")
@@ -107,9 +86,9 @@ function q_order.onIdle()
         end
         local index = n - i
         local reply = getItem("orders", index)
-        local order = reply.trans_id and allOrders[reply.trans_id]
-        if order then
-            order:onTransReply(reply)
+        local obj = reply.trans_id and allOrders[reply.trans_id]
+        if obj then
+            obj:onTransReply(reply)
             count = count - 1
         end
     end

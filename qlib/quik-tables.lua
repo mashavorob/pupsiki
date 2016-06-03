@@ -13,7 +13,6 @@
 
 q_tables = { }
 
-
 function q_tables.create(firmid, account)
     local self = { }
     setmetatable(self, {__index = tables})

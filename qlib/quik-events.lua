@@ -11,14 +11,14 @@
 # or enable modeline in your .vimrc
 ]]
 
-q_events = 
-    { strategy = nil 
-    , silentMode = false
-    , events = {}
-    }
+q_events = {} 
 
 function q_events.create()
-    local self = { }
+    local self = 
+        { strategy = nil
+        , silentMode = true
+        , events = {}
+        }
     setmetatable(self, { __index = q_events })
     return self
 end

@@ -11,19 +11,9 @@
 # or enable modeline in your .vimrc
 ]]
 
-local book = {
-    l2Snap = nil,  -- { bid_count=20, offer_count=20,  bid={ {price=1245, quantity="12"}, ...}, offer={...} },
-    order = nil, -- { price=0, qty=0, flags=0 }
-    originalL2Snap = { bid_count=0, offer_count=0,  bid={}, offer={} },
+local book = {}
 
-    l2 = false,
-    pos = 0,
-    paid = 0,
-    deals = 0,
-}
-
-local tests = {
-}
+local tests = {}
 
 local emptyBook = { bid_count=0, offer_count=0, bid={}, offer={} }
 
@@ -34,11 +24,19 @@ function q_book.getEmptyBook()
 end
 
 function q_book.create(class, asset, priceStep, priceStepValue)
-    local res = { class=class
-                , asset=asset
-                , priceStep=priceStep
-                , priceStepValue=priceStepValue
-                }
+    local res = 
+        { class=class
+        , asset=asset
+        , priceStep=priceStep
+        , priceStepValue=priceStepValue
+        , l2Snap = nil
+        , order = nil
+        , originalL2Snap = emptyBook
+        , l2 = false
+        , pos = 0
+        , paid = 0
+        , deals = 0
+        }
     setmetatable(res, { __index=book})
     return res
 end

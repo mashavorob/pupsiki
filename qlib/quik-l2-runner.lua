@@ -16,31 +16,31 @@ require("qlib/quik-logger")
 require("qlib/quik-table")
 require("qlib/quik-fname")
 
-q_runner = {
-    strategy = false,
-    etc = config.create {
-        asset = "RIZ5",
-        class = "SPBFUT",
-        logs = {
-            -- ordersLog = "logs/orders[L2-SPBFUT-RIZ5]-2015-11-11.log",
-            -- replyLog  = "logs/orders-replies[L2-SPBFUT-RIZ5]-2015-11-11.log",
-            -- tradesLog = "logs/trade-events[L2-SPBFUT-RIZ5]-2015-11-11.log" ,
-            -- allTradesLog = "logs/all-trade-events[L2-SPBFUT-RIZ5]-2015-11-11.log" ,
-        },
-        account = "SPBFUT005B2",
-    },
-    logs = {
-        ordersLog = false,
-        replyLog = false,
-        tradesLog = false,
-        allTradesLog = false,
-    },
-    day = false,
-    qtable = false,
-}
+q_runner = {}
 
 function q_runner.create(strategy, etc)
-    local self ={ }
+    local self =
+        { strategy = false
+        , etc = config.create
+            { asset = "RIZ5"
+            , class = "SPBFUT"
+            , logs =
+                { -- ordersLog = "logs/orders[L2-SPBFUT-RIZ5]-2015-11-11.log",
+                  -- replyLog  = "logs/orders-replies[L2-SPBFUT-RIZ5]-2015-11-11.log",
+                  -- tradesLog = "logs/trade-events[L2-SPBFUT-RIZ5]-2015-11-11.log" ,
+                  -- allTradesLog = "logs/all-trade-events[L2-SPBFUT-RIZ5]-2015-11-11.log" ,
+                }
+            , account = "SPBFUT005B2"
+            }
+        , logs =
+            { ordersLog = false
+            , replyLog = false
+            , tradesLog = false
+            , allTradesLog = false
+            }
+        , day = false
+        , qtable = false
+        }
     setmetatable(self, {__index = q_runner})
 
     self.strategy = strategy
