@@ -14,7 +14,7 @@
 local etc = {
     account = "==SPBFUT005eC",
     firmid =  "==SPBFUT589000",
-    sname = "quik-scalper",
+    sname = "quik-averager",
 
     asset = 'SiM6',
     class = "SPBFUT",

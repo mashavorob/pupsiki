@@ -83,7 +83,7 @@ function book:onTrade(trade)
         -- sell
         local l2Snap = self.originalL2Snap
         local quote = l2Snap and l2Snap.bid[l2Snap.bid_count] or nil
-        if buyOrder and (
+        if buyOrder and quote and (
             not l2Snap
             or l2Snap.bid_count == 0 
             or quote.price < self.order.price
@@ -102,7 +102,7 @@ function book:onTrade(trade)
         -- buy
         local l2Snap = self.originalL2Snap
         local quote = l2Snap and l2Snap.offer[1] or nil
-        if sellOrder and (
+        if sellOrder and quote and (
             not l2Snap
             or l2Snap.offer_count == 0 
             or quote.price > self.order.price
