@@ -44,7 +44,7 @@ function q_runner.create(strategy, etc)
     setmetatable(self, {__index = q_runner})
 
     self.strategy = strategy
-    self.etc = config.create( q_runner.etc )
+    self.etc = config.create( self.etc )
     self.qtable = qtable.create(strategy.title .. ".wpos", strategy.title, strategy.ui_mapping)
     self.etc.logs = {
         ordersLog = "logs/orders[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
