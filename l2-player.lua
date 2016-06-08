@@ -107,6 +107,7 @@ local container = loadMarketData(logs)
 
 print("preprocessing market data")
 container = q_simulator.preProcessData(container)
+collectgarbage()
 
 if op == "run" then
     print(string.format("Running %s", strategy))

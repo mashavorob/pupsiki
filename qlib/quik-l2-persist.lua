@@ -14,6 +14,33 @@
 
 q_persist = {}
 
+local function preProcessBookSide(count, side)
+    count = math.min(20, tonumber(count))
+    if count == 0 then
+        return count
+    end
+    local quotes = {}
+    for i = 1,count do
+        local q = side[i]
+        table.insert(quotes, { price = tonumber(q.price), quantity = tonumber(q.quantity) })
+    end
+    return count, quotes
+end
+
+local function preProcessL2(l2)
+    if not l2 then
+        return
+    end
+    local bid_count, bid = preProcessBookSide(l2.bid_count, l2.bid)
+    local offer_count, offer = preProcessBookSide(l2.offer_count, l2.offer)
+    return
+        { bid_count = bid_count
+        , bid = bid
+        , offer_count = offer_count
+        , offer = offer
+        }
+end
+
 function q_persist.loadL2Log(fname)
     local file = fname and assert(io.open(fname,"r")) or io.stdin
     local data = {}
@@ -23,7 +50,9 @@ function q_persist.loadL2Log(fname)
         assert(fn, message)
         local status, rec = pcall(fn)
         assert(status)
-        table.insert(data, rec[1])
+        rec = rec[1]
+        rec.l2 = preProcessL2(rec.l2)
+        table.insert(data, rec)
     end
     assert(#data > 1)
     return data

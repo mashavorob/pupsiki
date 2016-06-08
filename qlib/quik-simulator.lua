@@ -88,27 +88,7 @@ end
 
 function q_simulator.preProcessData(data)
     
-    local emptyQuote = 
-        { price = 0
-        , quantity = 0 
-        }
-
-    local function hashQuote(q)
-
-        local h = ""
-        local bid_count = tonumber(q.bid_count)
-        for i = 1,etc.maxPriceLevel do
-            local bid = (q.bid or {})[tonumber(bid_count) - i + 1] or emptyQuote
-            local offer = (q.offer or {})[i] or emptyQuote
-            h = h .. 
-                "b" .. tostring(bid.price) .. ":" .. tostring(bid.quantity) .. 
-                "q" .. tostring(offer.price) .. ":" .. tostring(offer.quantity) .. "-"
-        end
-        return h
-    end
-
     local newData = {}
-    local prevQuoteHash = nil
 
     for i, rec in ipairs(data) do
         if rec.event == "OnLoggedTrade" and rec.trade.sec_code ~= etc.asset then 
@@ -117,35 +97,11 @@ function q_simulator.preProcessData(data)
             -- filter out
         elseif rec.event == "onQuote" and rec.asset ~= etc.asset then
             -- filter out
-        elseif rec.event == "onQuote" then
-            local l2 = rec.l2
-            l2.bid_count = tonumber(l2.bid_count)
-            l2.offer_count = tonumber(l2.offer_count)
-
-            for i = 1,l2.bid_count do
-                local q = l2.bid[i]
-                q.price = tonumber(q.price)
-                q.quantity = tonumber(q.quantity)
-            end
-            for i = 1,l2.offer_count do
-                local q = l2.offer[i]
-                q.price = tonumber(q.price)
-                q.quantity = tonumber(q.quantity)
-            end
-
-            local hash = hashQuote(l2)
-            if hash ~= prevQuoteHash then
-                prevQuoteHash = hash
-                table.insert(newData, rec)
-            end
         else
             table.insert(newData, rec)
         end
     end
 
-    print("Original data was: ", #data)
-    print("Filtered data was: ", #newData)
-    print(string.format("ratio:\t%.1f%%", (#data - #newData)*100/#data))
     return newData
 end
 
