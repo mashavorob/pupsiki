@@ -87,21 +87,25 @@ local cdecl = [[
         QBOOK_QTRADE    u;
     } QRECORD;
 
+    typedef struct QCHUNKtag
+    {
+        QRECORD chunk[1000];
+    } QCHUNK;
+
     void* malloc(size_t);
     void free(void*);
 ]]
 
-local function allocQRecords(ffi, ctype, celt)
-    local ptr = ffi.gc(ffi.C.malloc(ffi.sizeof(ctype)*celt), ffi.C.free)
-    return ffi.cast(ctype .. "*", ptr)
+local function allocQRecords2(ffi, celt)
+    local ptr = ffi.gc(ffi.C.malloc(ffi.sizeof("QRECORD")*celt), ffi.C.free)
+    ptr = ffi.cast("QCHUNK*", ptr)
+    return ptr.chunk
 end
 
---[[
     -- does not allow to exceed luijit memory limit
-local function allocQRecords(ffi, ctype, celt)
-    return ffi.new(ctype .. "[?]", celt)
+local function allocQRecords(ffi, celt)
+    return ffi.new("QRECORD[?]", celt)
 end
-]]
 
 local ffi_pool = {}
 
@@ -123,7 +127,7 @@ function ffi_pool.create(ffi)
 end
 
 function ffi_pool:appendChunk()
-    table.insert(self.chunks, allocQRecords(self.ffi, "QRECORD", self.chunkSize))
+    table.insert(self.chunks, allocQRecords(self.ffi, self.chunkSize))
     self.tailSize = 0
 end
 
@@ -408,17 +412,6 @@ function container:add(item)
         self.preambleLocked = true
         self.data:append(item)
     end
-end
-
-local function hash(a)
-    if type(a) ~= "table" then
-        return type(a) .. ":" .. tostring(a)
-    end
-    local s = "table:{"
-    for k,v in pairs(a) do
-        s = s .. "[" .. hash(k) .. "]=" .. hash(v) .. ","
-    end
-    return s .. "}"
 end
 
 local function compare(_1, _2, ctx)
@@ -730,7 +723,7 @@ function tests.test2G() -- allocate 3Gb of oobjects
         return
     end
     local recSize = ffi.sizeof("QRECORD")
-    local goodSize = 2*1024*1024*1024 -- 2Gb
+    local goodSize = 512*1024*1024 -- 2Gb
     local recNum = math.ceil(goodSize/recSize/2)*2
 
     local count = 0

@@ -132,14 +132,15 @@ function q_functor:func()
     self.q_events = q_events.create()
 
     -- assume data starts with parameters and logged trades
-    for i, rec in ipairs(self.s_params.data) do
+    for _, rec in ipairs(self.s_params.data.params) do
         if rec.event == "OnParams" then
             self.q_params:updateParams(rec.class, rec.asset, rec.params)
             self.q_books:getBook(rec.class, rec.asset, self.q_params)
-        elseif rec.event == "OnLoggedTrade" then
+        end
+    end
+    for _, rec in self.s_params.data.preamble:items() do
+        if rec.event == "OnLoggedTrade" then
             table.insert(self.q_tables.all_trades, rec.trade)
-        else
-            break
         end
     end
     -- synchronize books and tables
@@ -155,7 +156,7 @@ function q_functor:func()
 
     local count = 0
 
-    for i, rec in ipairs(self.s_params.data) do
+    for i, rec in self.s_params.data.data:items() do
         count = i
         if rec.event == "onQuote" then
             self.quoteTime = rec.tstamp
@@ -178,10 +179,12 @@ function q_functor:func()
                 local evs = book:onTrade(rec.trade)
                 self.q_events:enqueueEvents(evs)
             end
+        --[[
         elseif rec.event == "OnParams" then
             -- just ignore
         elseif rec.event == "OnLoggedTrade" then
             -- just ignore
+        ]]
         else
             print("Unknown event type: ", rec.event)
             assert(false)

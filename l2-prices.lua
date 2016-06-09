@@ -1,4 +1,4 @@
-#!/usr/bin/env lua
+#!/usr/bin/env luajit
 -- vi: ft=lua:fenc=cp1251 
 --[[
 #
@@ -19,13 +19,13 @@ assert(require("qlib/quik-l2-persist"))
 
 local data = q_persist.loadL2Log()
 
-print("loaded: ", #data)
+print("loaded: ", data.data:size())
 print("time, bid, offer")
 
 local prevBid = false
 local prevOffer = false
 
-for _,rec in ipairs(data) do
+for _,rec in data.data:items() do
     if rec.event == "onQuote" then
         local l2 = rec.l2
         l2.bid_count = tonumber(l2.bid_count)
@@ -46,6 +46,5 @@ for _,rec in ipairs(data) do
         prevBid = bid
         prevOffer = offer
     end
-     
 end
 

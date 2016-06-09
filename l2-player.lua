@@ -1,4 +1,4 @@
-#!/usr/bin/env lua
+#!/usr/bin/env luajit
 -- vi: ft=lua:fenc=cp1251 
 
 --[[
@@ -63,15 +63,12 @@ local function parseArgs()
 end
 
 local function loadMarketData(logs)
-    local container = {}
+    local data = nil
 
     for _, f in ipairs(logs) do
-        local fdata = q_persist.loadL2Log(f)
-        for _,item in ipairs(fdata) do
-            table.insert(container, item)
-        end
+        data = q_persist.loadL2Log(f, data)
     end
-    return container
+    return data
 end
 
 local function runStrategy(strategy, container)
