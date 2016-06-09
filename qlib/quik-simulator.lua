@@ -17,6 +17,8 @@ assert(require("qlib/quik-utils"))
 assert(require("qlib/quik-functor"))
 assert(require("qlib/quik-avd"))
 
+local q_l2_data = assert(require("qlib/quik-jit-l2-data"))
+
 q_simulator = {}
 
 local etc = {
@@ -88,17 +90,32 @@ end
 
 function q_simulator.preProcessData(data)
     
-    local newData = {}
+    local newData = q_l2_data.create()
 
-    for i, rec in ipairs(data) do
+    newData.params = data.params
+
+    local filter = function(rec)
         if rec.event == "OnLoggedTrade" and rec.trade.sec_code ~= etc.asset then 
             -- filter out
+            return false
         elseif rec.event == "onTrade" and rec.trade.sec_code ~= etc.asset then 
             -- filter out
+            return false
         elseif rec.event == "onQuote" and rec.asset ~= etc.asset then
             -- filter out
-        else
-            table.insert(newData, rec)
+            return false
+        end
+        return true
+    end
+
+    for _,rec in data.preamble:items() do
+        if filter(rec) then
+            newData:add(rec)
+        end
+    end
+    for _,rec in data.data:items() do
+        if filter(rec) then
+            newData:add(rec)
         end
     end
 

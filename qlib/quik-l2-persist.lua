@@ -14,8 +14,10 @@
 
 q_persist = {}
 
+local q_l2_data = assert(require("qlib/quik-jit-l2-data"))
+
 local function preProcessBookSide(count, side)
-    count = math.min(20, tonumber(count))
+    count = math.max(0, math.min(20, tonumber(count)))
     if count == 0 then
         return count
     end
@@ -41,9 +43,9 @@ local function preProcessL2(l2)
         }
 end
 
-function q_persist.loadL2Log(fname)
+function q_persist.loadL2Log(fname, data)
     local file = fname and assert(io.open(fname,"r")) or io.stdin
-    local data = {}
+    data = data or q_l2_data.create()
     for line in file:lines() do
         local text = "return {" .. line .. "}"
         local fn, message = loadstring(text)
@@ -52,8 +54,8 @@ function q_persist.loadL2Log(fname)
         assert(status)
         rec = rec[1]
         rec.l2 = preProcessL2(rec.l2)
-        table.insert(data, rec)
+        data:add(rec)
     end
-    assert(#data > 1)
+    assert(data.data:size() > 0)
     return data
 end
