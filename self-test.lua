@@ -17,6 +17,7 @@ assert(require("qlib/quik-logger"))
 assert(require("qlib/quik-etc"))
 assert(require("qlib/quik-avd"))
 assert(require("qlib/quik-book"))
+local q_container = assert(require("qlib/quik-jit-l2-data"))
 
 print("")
 print("Quik library unit tests (c) 2016")
@@ -34,6 +35,7 @@ local unitTests = {
     config = config.getTestSuite(),
     avd = avd.getTestSuite(),
     book = q_book.getTestSuite(),
+    q_container = q_container.getTestSuite(), 
 }
 
 local failed = { }
@@ -50,7 +52,7 @@ for uname,units in pairs(unitTests) do
             io.write("OK\n")
         else
             io.write("Failed\n")
-            -- test()
+            test()
             table.insert(failed, uname .. "." .. tname)
         end
         io.flush()

@@ -106,12 +106,29 @@ local function maximizeParam(cache, func, max, index)
 end
 
 local function makeClone(func)
-
-    if type(func.clone) == "function" then
-        for _,info in ipairs(func.params) do
-            assert( type(func["get_" .. info.name]) == "function", "get_" .. info.name )
-            assert( type(func["set_" .. info.name]) == "function", "set_" .. info.name )
+    for _, info in ipairs(func.params) do
+        local get_param = "get_" .. info.name
+        local set_param = "set_" .. info.name
+        if func[get_param] == nil then
+            func[get_param] = function(self)
+                return self[info.name]
+            end
         end
+        if func[set_param] == nil then
+            func[set_param] = function(self, val)
+                self[info.name] = val
+            end
+        end
+    end
+
+    for _,info in ipairs(func.params) do
+        assert( type(func["get_" .. info.name]) == "function"
+              , string.format("type(get_%s)=%s", info.name, type(func["get_" .. info.name])) )
+        assert( type(func["set_" .. info.name]) == "function"
+              , string.format("type(set_%s)=%s", info.name, type(func["set_" .. info.name])) )
+    end
+ 
+    if type(func.clone) == "function" then
         return func:clone()
     end
 
@@ -119,14 +136,6 @@ local function makeClone(func)
 
     setmetatable(clone, { __index = func })
 
-    for _, info in ipairs(func.params) do
-        clone["get_" .. info.name] = function(self)
-            return self[info.name]
-        end
-        clone["set_" .. info.name] = function(self, p)
-            self[info.name] = p
-        end
-    end
     function clone:clone()
         local c = {}
         setmetatable(c, { __index = self })
@@ -344,8 +353,8 @@ function avd.getTestSuite()
     end
     function testSuite.test_2d_func_fail()
         local func = {
-            x = 0.5,
-            y = -0.5,
+            x = 0,
+            y = 0,
             params = {
                 { name="x", min = -1, max = 1, step = 0.1, relative = true, precision=1e-2, },
                 { name="y", min = -1, max = 1, step = 0.1, relative = true, precision=1e-3, },
