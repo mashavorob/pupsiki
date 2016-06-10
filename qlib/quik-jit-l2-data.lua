@@ -89,27 +89,29 @@ local cdecl = [[
 
     typedef struct QCHUNKtag
     {
-        QRECORD chunk[1000];
+        QRECORD chunk[1];
     } QCHUNK;
 
     void* malloc(size_t);
     void free(void*);
 ]]
 
-local function allocQRecords2(ffi, celt)
-    local ptr = ffi.gc(ffi.C.malloc(ffi.sizeof("QRECORD")*celt), ffi.C.free)
-    ptr = ffi.cast("QCHUNK*", ptr)
-    return ptr.chunk
-end
-
-    -- does not allow to exceed luijit memory limit
 local function allocQRecords(ffi, celt)
-    return ffi.new("QRECORD[?]", celt)
+    local ptr = ffi.C.malloc(ffi.sizeof("QRECORD")*celt)
+
+    local finalizer = function()
+        ffi.C.free(ptr)
+    end
+
+    local obj = ffi.cast("QCHUNK*", ptr)[0]
+    obj = ffi.gc(obj, finalizer)
+    return obj
 end
 
 local ffi_pool = {}
 
 function ffi_pool.create(ffi)
+
     local self = 
         { ffi = ffi
         , chunkSize = 1000
@@ -118,11 +120,14 @@ function ffi_pool.create(ffi)
         , s_indices = {}
         , tailSize = 0
         }
-    setmetatable(self, { __index=ffi_pool })
+
+    setmetatable(self, {__index = ffi_pool})
+
     self:appendChunk()
     self.onLoggedTrade = self:getIndexFromString("OnLoggedTrade")
     self.onTrade = self:getIndexFromString("onTrade")
     self.onQuote = self:getIndexFromString("onQuote")
+
     return self
 end
 
@@ -264,7 +269,7 @@ function ffi_pool:appendRecord()
         self:appendChunk()
     end
 
-    local record = self.chunks[#self.chunks][self.tailSize]
+    local record = self.chunks[#self.chunks].chunk[self.tailSize]
     self.tailSize = self.tailSize + 1
     return record
 end
@@ -302,7 +307,7 @@ function ffi_pool:item(index)
     local chunkIndex = math.ceil(index/self.chunkSize)
     local indexInChunk = index - (chunkIndex - 1)*self.chunkSize - 1 -- zero based
 
-    local ffiItem = self.chunks[chunkIndex][indexInChunk]
+    local ffiItem = self.chunks[chunkIndex].chunk[indexInChunk]
     local item = { event = self:getStringFromIndex(ffiItem.itemType) }
     if ffiItem.itemType == self.onLoggedTrade then
         item.trade = self:extractTrade(ffiItem.u.trade)
@@ -723,7 +728,7 @@ function tests.test2G() -- allocate 3Gb of oobjects
         return
     end
     local recSize = ffi.sizeof("QRECORD")
-    local goodSize = 512*1024*1024 -- 2Gb
+    local goodSize = 2*1024*1024*1024 -- far beyound luajit-2.0 restriction
     local recNum = math.ceil(goodSize/recSize/2)*2
 
     local count = 0
