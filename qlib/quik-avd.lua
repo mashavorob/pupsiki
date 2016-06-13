@@ -50,6 +50,13 @@ local function maximizeParam(cache, func, max, index)
         self["set_" .. info.name](self, p)
     end
 
+    if info.get_max == nil then
+        info.get_max = function() return info.max end
+    end
+    if info.get_min == nil then
+        info.get_min = function() return info.min end
+    end
+
     print("Optimizing parameter:", info.name)
     print(" Initial param value:", getParam(func))
     print("      Function value:", max)
@@ -64,10 +71,12 @@ local function maximizeParam(cache, func, max, index)
             -- make clone
             local clone = func:clone()
             local param = getParam(func) + step*direction
-            if param < info.min then
-                param = info.min
-            elseif param > info.max then
-                param = info.max
+            local lower = info.get_min(func)
+            local upper = info.get_max(func)
+            if param < lower then
+                param = lower
+            elseif param > upper then
+                param = upper
             end
             setParam(clone, param)
             local hash = hashParams(clone)

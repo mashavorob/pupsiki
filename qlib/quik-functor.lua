@@ -207,7 +207,7 @@ function q_functor:func()
 
     local margin = self.q_tables:getMargin()
     if self.q_events.strategy:isHalted() and count > 0 then
-        margin = margin*#self.s_params.data/count
+        --margin = margin*#self.s_params.data/count
     end
 
     instance = nil

@@ -16,7 +16,7 @@ q_events = {}
 function q_events.create()
     local self = 
         { strategy = nil
-        , silentMode = false
+        , silentMode = true
         , events = {}
         }
     setmetatable(self, { __index = q_events })

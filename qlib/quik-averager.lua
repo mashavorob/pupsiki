@@ -37,20 +37,41 @@ local q_averager =
         , relPositionLimit = 0.6         -- максимальная приемлемая позиция по отношению к размеру счета
 
         , maxLoss = 1000                 -- максимальная приемлимая потеря
+      --  , maxLoss = 1e32                 -- максимальная приемлимая потеря (режим оптимизации)
 
         -- Параметры стратегии
-        , avgFactorSpot  = 917           -- коэффициент осреднения спот
-        , avgFactorTrend = 2330          -- коэфициент осреднения тренда
-        , threshold      = 9.7e-6          -- порог чувствительности
+        , avgFactorSpot  = 100           -- коэффициент осреднения спот
+        , avgFactorTrend = 100          -- коэфициент осреднения тренда
+        , enterThreshold = 1e-4          -- порог чувствительности для входа в позицию
+        , exitThreshold  = 1e-5          -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
         , maxDeviation = 1
 
         
         , params = 
-            { { name="avgFactorSpot",  min=1, max=1e32, step=100, precision=1 }
-            , { name="avgFactorTrend", min=1, max=1e32, step=500, precision=1 }
-            , { name="threshold",      min=0, max=1e32, step=1e-5, precision=1e-7 }
+            { { name="avgFactorSpot",  min=1, max=1e32, step=50, precision=1 }
+            , { name="avgFactorTrend", min=1, max=1e32, step=50, precision=1 }
+            , { name="enterThreshold"
+              , min=0
+              , max=1e32
+              , get_min = function (func) 
+                    print("func.exitThreshold:", func.exitThreshold)
+                    return func.exitThreshold
+                end
+              , step=1e-5
+              , precision=1e-7 
+              }
+            , { name="exitThreshold"
+              , min=0
+              , max=1e32
+              , get_max = function (func) 
+                    print("func.enterThreshold:", func.enterThreshold)
+                    return func.enterThreshold
+                end
+              , step=1e-5
+              , precision=1e-7 
+              }
             } 
         -- расписание работы
         , schedule = 
@@ -449,10 +470,18 @@ function strategy:calcPlannedPos()
         return
     end
 
-    if market.avgTrend > etc.threshold then
-        state.targetPos = 1
-    elseif market.avgTrend < -etc.threshold then
-        state.targetPos = -1
+    if state.targetPos < 0 and market.avgTrend > -etc.exitThreshold then
+        state.targetPos = 0
+    end
+    if state.targetPos > 0 and market.avgTrend < etc.exitThreshold then
+        state.targetPos = 0
+    end
+    if state.targetPos == 0 then
+        if market.avgTrend > etc.enterThreshold then
+            state.targetPos = 1
+        elseif market.avgTrend < -etc.enterThreshold then
+            state.targetPos = -1
+        end
     end
     state.targetPos = state.targetPos*self:getLimit()
 end

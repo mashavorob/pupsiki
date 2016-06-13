@@ -122,13 +122,18 @@ function q_simulator.preProcessData(data)
     return newData
 end
 
-function q_simulator.runStrategy(name, data)
-
-    print(string.format("q_simulator.runStrategy(%s, %s)", tostring(name), tostring(data)))
-
+function q_simulator.runStrategy(name, data, params)
     local functor = q_functor.create(name, data, etc)
-    local res = functor:func()
-    return res
+    params = params or {}
+    for _,p in ipairs(params) do
+        local set_param = functor['set_' .. p.param]
+        if set_param then
+            set_param(functor, p.value)
+        else
+            functor[p.param] = p.value
+        end
+    end
+    return functor:func()
 end
 
 function q_simulator.optimizeStrategy(name, data)
