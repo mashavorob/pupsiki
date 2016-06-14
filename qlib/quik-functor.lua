@@ -124,6 +124,27 @@ function q_functor:createStartegy()
 end
 
 function q_functor:func()
+    -- check limits
+    for _,info in ipairs(self.params) do
+        local value = self["get_" .. info.name](self)
+        local upper, lower = nil, nil
+
+        if info.get_min then
+            lower = info.get_min(self)
+        else
+            lower = info.min
+        end
+        if info.get_max then
+            upper = info.get_max(self)
+        else
+            upper = info.max
+        end
+
+        if value > upper or value < lower then
+            return 0
+        end
+    end
+
     instance = self
     -- reset state
     self.q_tables = q_tables.create(self.s_params.etc.firmid, self.s_params.etc.account)
