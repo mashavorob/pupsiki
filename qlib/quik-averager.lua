@@ -39,10 +39,10 @@ local q_averager =
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot  = 25            -- коэффициент осреднения спот
-        , avgFactorTrend = 25            -- коэфициент осреднения тренда
-        , enterThreshold = 0.032         -- порог чувствительности для входа в позицию
-        , exitThreshold  = 0.032         -- порог чувствительности для выхода из позиции
+        , avgFactorSpot  = 1500          -- коэффициент осреднения спот
+        , avgFactorTrend = 1150          -- коэфициент осреднения тренда
+        , enterThreshold = 0.002          -- порог чувствительности для входа в позицию
+        , exitThreshold  = 0.002          -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
         , maxDeviation = 1
@@ -55,7 +55,6 @@ local q_averager =
               , min=0
               , max=1e32
               , get_min = function (func) 
-                    print("func.exitThreshold:", func.exitThreshold)
                     return func.exitThreshold
                 end
               , step=1e-5
@@ -65,7 +64,6 @@ local q_averager =
               , min=0
               , max=1e32
               , get_max = function (func) 
-                    print("func.enterThreshold:", func.enterThreshold)
                     return func.enterThreshold
                 end
               , step=1e-5
@@ -75,8 +73,8 @@ local q_averager =
         -- расписание работы
         , schedule = 
             { q_time.interval("10:01", "12:55") -- 10:01 - 12:55
-            , q_time.interval("13:05", "13:55") -- 13:01 - 13:55
-            , q_time.interval("14:16", "15:35") -- 14:16 - 15:35
+            , q_time.interval("13:05", "13:58") -- 13:01 - 13:55
+            , q_time.interval("14:05", "15:35") -- 14:16 - 15:35
             , q_time.interval("16:01", "18:50") -- 16:01 - 18:55
             , q_time.interval("19:01", "21:55") -- 19:01 - 21:55
             }
@@ -84,12 +82,12 @@ local q_averager =
 
         , ui_mapping =
             { { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" }
-            , { name="targetPos", title="Рас. позиция", ctype=QTABLE_DOUBLE_TYPE, width=45, format="%.3f" }
-            , { name="spot", title="Средняя цена", ctype=QTABLE_DOUBLE_TYPE, width=45, format="%.0f" }
-            , { name="trend", title="Средний тренд", ctype=QTABLE_DOUBLE_TYPE, width=45, format="%.5f" }
+            , { name="targetPos", title="Рас. позиция", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.3f" }
+            , { name="spot", title="Средняя цена", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.0f" }
+            , { name="trend", title="Средний тренд", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.5f" }
             , { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=15, format="%s" }
-            , { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=65, format="%s" }
-            , { name="lastError", title="Результат последней операции", ctype=QTABLE_STRING_TYPE, width=80, format="%s" }
+            , { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=40, format="%s" }
+            , { name="lastError", title="Результат последней операции", ctype=QTABLE_STRING_TYPE, width=40, format="%s" }
         }
     }
 

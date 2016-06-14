@@ -26,8 +26,8 @@ l2r = {
         state = "Запись",
     },
     assets = {
-        { class='SPBFUT', asset='RIM6' },
-        { class='SPBFUT', asset='SiM6' },
+        { class='SPBFUT', asset='RIU6' },
+        { class='SPBFUT', asset='SiU6' },
     },
 }
 
