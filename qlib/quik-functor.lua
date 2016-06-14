@@ -123,28 +123,7 @@ function q_functor:createStartegy()
     return strategy
 end
 
-function q_functor:func()
-    -- check limits
-    for _,info in ipairs(self.params) do
-        local value = self["get_" .. info.name](self)
-        local upper, lower = nil, nil
-
-        if info.get_min then
-            lower = info.get_min(self)
-        else
-            lower = info.min
-        end
-        if info.get_max then
-            upper = info.get_max(self)
-        else
-            upper = info.max
-        end
-
-        if value > upper or value < lower then
-            return 0
-        end
-    end
-
+function q_functor:runDay(day)
     instance = self
     -- reset state
     self.q_tables = q_tables.create(self.s_params.etc.firmid, self.s_params.etc.account)
@@ -153,13 +132,13 @@ function q_functor:func()
     self.q_events = q_events.create()
 
     -- assume data starts with parameters and logged trades
-    for _, rec in ipairs(self.s_params.data.params) do
+    for _, rec in ipairs(day.params) do
         if rec.event == "OnParams" then
             self.q_params:updateParams(rec.class, rec.asset, rec.params)
             self.q_books:getBook(rec.class, rec.asset, self.q_params)
         end
     end
-    for _, rec in self.s_params.data.preamble:items() do
+    for _, rec in day.preamble:items() do
         if rec.event == "OnLoggedTrade" then
             table.insert(self.q_tables.all_trades, rec.trade)
         end
@@ -177,7 +156,7 @@ function q_functor:func()
 
     local count = 0
 
-    for i, rec in self.s_params.data.data:items() do
+    for i, rec in day.data:items() do
         count = i
         if rec.event == "onQuote" then
             self.quoteTime = rec.tstamp
@@ -227,11 +206,41 @@ function q_functor:func()
     self.q_events:printEnd()
 
     local margin = self.q_tables:getMargin()
-    if self.q_events.strategy:isHalted() and count > 0 then
-        --margin = margin*#self.s_params.data/count
-    end
 
     instance = nil
+
+    return margin
+end
+
+
+function q_functor:func()
+    -- check limits
+    for _,info in ipairs(self.params) do
+        local value = self["get_" .. info.name](self)
+        local upper, lower = nil, nil
+
+        if info.get_min then
+            lower = info.get_min(self)
+        else
+            lower = info.min
+        end
+        if info.get_max then
+            upper = info.get_max(self)
+        else
+            upper = info.max
+        end
+
+        if value > upper or value < lower then
+            return 0
+        end
+    end
+
+    local margin = 0
+
+    for _,day in ipairs(self.s_params.data) do
+        local clone = self:clone()
+        margin = margin + clone:runDay(day)
+    end
 
     return margin
 end

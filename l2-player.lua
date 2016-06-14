@@ -111,10 +111,11 @@ local function parseArgs()
 end
 
 local function loadMarketData(logs)
-    local data = nil
+    local data = {}
 
     for _, f in ipairs(logs) do
-        data = q_persist.loadL2Log(f, data)
+        local fdata = q_persist.loadL2Log(f)
+        table.insert(data, fdata)
     end
     return data
 end

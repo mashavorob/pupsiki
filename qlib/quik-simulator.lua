@@ -89,11 +89,6 @@ function sendTransaction(trans)
 end
 
 function q_simulator.preProcessData(data)
-    
-    local newData = q_l2_data.create()
-
-    newData.params = data.params
-
     local filter = function(rec)
         if rec.event == "OnLoggedTrade" and rec.trade.sec_code ~= etc.asset then 
             -- filter out
@@ -108,15 +103,26 @@ function q_simulator.preProcessData(data)
         return true
     end
 
-    for _,rec in data.preamble:items() do
-        if filter(rec) then
-            newData:add(rec)
+    local newData = {}
+    for _,fdata in ipairs(data) do
+    
+        local newFData = q_l2_data.create()
+
+        newFData.params = fdata.params
+
+
+        for _,rec in fdata.preamble:items() do
+            if filter(rec) then
+                newFData:add(rec)
+            end
         end
-    end
-    for _,rec in data.data:items() do
-        if filter(rec) then
-            newData:add(rec)
+        for _,rec in fdata.data:items() do
+            if filter(rec) then
+                newFData:add(rec)
+            end
         end
+
+        table.insert(newData, newFData)
     end
 
     return newData
@@ -141,6 +147,7 @@ function q_simulator.optimizeStrategy(name, data)
     print(string.format("q_simulator.optimizeStrategy(%s, %s)", tostring(name), tostring(data)))
     
     local functor = q_functor.create(name, data, etc)
+    instance = nil
     local before, after, clone = avd.maximize(functor)
     if clone == nil then
         return
