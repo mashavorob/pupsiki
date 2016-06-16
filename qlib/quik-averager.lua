@@ -39,10 +39,10 @@ local q_averager =
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot  = 1500          -- коэффициент осреднения спот
-        , avgFactorTrend = 1150          -- коэфициент осреднения тренда
-        , enterThreshold = 0.002          -- порог чувствительности для входа в позицию
-        , exitThreshold  = 0.002          -- порог чувствительности для выхода из позиции
+        , avgFactorSpot  = 1400          -- коэффициент осреднения спот
+        , avgFactorTrend = 600           -- коэфициент осреднения тренда
+        , enterThreshold = 1e-6          -- порог чувствительности для входа в позицию
+        , exitThreshold  = 1e-6          -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
         , maxDeviation = 1
@@ -545,10 +545,10 @@ function strategy:onMarketShift()
         local res, err = true, ""
         if diff < 0 then
             state.state = state.targetPos == 0 and "Закрытие позиции" or "Открытие шорт"
-            res, err = state.order:send('S', market.bid, lotSize)
+            res, err = state.order:send('S', market.offer, lotSize)
         else
             state.state = state.targetPos == 0 and "Закрытие позиции" or "Открытие лонг"
-            res, err = state.order:send('B', market.offer, lotSize)
+            res, err = state.order:send('B', market.bid, lotSize)
         end
         self:checkStatus(res, err)
     end
