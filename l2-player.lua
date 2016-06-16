@@ -149,14 +149,13 @@ local function paramsToString(params)
     return s
 end
 
-
-local function printResults1D(results)
+local function printResults1D(f_out, results)
     for _,p in ipairs(results) do
-        print(paramsToString(p.params) .. ": " .. tostring(p.value))
+        f_out:write(paramsToString(p.params), ",", tostring(p.value), "\n")
     end
 end
 
-local function printResults2D(results, startIndex)
+local function printResults2D(f_out, results, startIndex)
     startIndex = startIndex or 1
 
     if #results < startIndex then
@@ -182,8 +181,8 @@ local function printResults2D(results, startIndex)
         cx = cx + 1
     end
 
-    print("," .. results[startIndex].params[paramCount].param)
-    print(header)
+    f_out:write(",", results[startIndex].params[paramCount].param, "\n")
+    f_out:write(header, "\n")
 
     startValue = nil
     local i = startIndex
@@ -200,12 +199,12 @@ local function printResults2D(results, startIndex)
             line = line .. "," .. tostring(results[i].value)
             i = i + 1
         end
-        print(line)
+        f_out:write(line, "\n")
     end
     return #results
 end
 
-local function printResults(results)
+local function printResults(f_out, results)
     assert(#results > 0)
     if #results < 1 then
         return
@@ -213,7 +212,7 @@ local function printResults(results)
     local count = #results[1].params
 
     if count == 1 then
-        printResults1D(results)
+        printResults1D(f_out, results)
         return
     end
 
@@ -221,20 +220,23 @@ local function printResults(results)
     while i < #results do
         for j = 1,count-2 do
             local params = results[i].params
-            print(params[j].param .. " = " .. tostring(params[j].value))
+            f_out:write(params[j].param .. " = " .. tostring(params[j].value), "\n")
         end
-        i = printResults2D(results, i)
-        print()
+        i = printResults2D(f_out, results, i)
     end
 end
 
 local function probeParam(strategy, container, options, ctx)
 
+    local fname = nil
     if not ctx then
+        fname = "probbing-" .. strategy
         print("Probbing following parameters:")
         for _,p in ipairs(options) do
             print(string.format("Parameter: '%s' from %s to %s, step %s", p.param, tostring(p.from), tostring(p.to), tostring(p.step)))
+            fname = fname .. "-" .. p.param .. "[" .. tostring(p.from) .. "-" .. tostring(p.to) .. "]"
         end
+        fname = fname .. ".csv"
     end
 
     ctx = ctx or {}
@@ -302,9 +304,9 @@ local function probeParam(strategy, container, options, ctx)
     end
 
     if #ctx == 0 then
-        print("Results:")
-        print()
-        printResults(results)
+        local f_out = io.open(fname, "w")
+        print("Saving results to:", fname)
+        printResults(f_out, results)
     end
     return results
 end
