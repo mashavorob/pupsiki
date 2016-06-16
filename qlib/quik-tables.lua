@@ -51,7 +51,6 @@ function q_tables:syncTables(books, params)
     local deals = 0
     for class, listOfBooks in pairs(books.classes) do
         for asset, book in pairs(listOfBooks) do
---            print("inserting", class, asset)
             table.insert(orders, book.order)
             table.insert(holdings, {class_code=class, sec_code=asset, totalnet=book.pos})
             local price = 0
@@ -66,7 +65,7 @@ function q_tables:syncTables(books, params)
                     price = book.l2Snap.offer[1].price
                 end
             end
-            margin = margin - book.pos*price/book.priceStep*book.priceStepValue - book.paid
+            margin = margin + book.pos*price/book.priceStep*book.priceStepValue + book.paid
             deals = deals + book.deals
         end
     end

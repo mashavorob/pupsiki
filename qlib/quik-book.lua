@@ -312,11 +312,12 @@ function book:makeOrder(trans)
 
     local order = 
         { order_num=orderNum
-        , flags= 
-            1  +                                  -- 0x01 active
-            (trans.OPERATION and trans.OPERATION == 'S' and 4 or 0) + -- 0x04 SELL or BUY
-            8  +                                  -- 0x08 limited
-            16                                    -- 0x10 allow trades with different prices
+        , flags= bit.bor(
+            0x01,                                                   -- 0x01 active 
+            0x08,                                                   -- 0x08 limited
+            0x10,                                                   -- 0x10 allow trades with different prices
+            (trans.OPERATION and trans.OPERATION == 'S' and 4 or 0) -- 0x04 SELL or BUY
+            )
         , brokerref=""
         , userid=""
         , firmid=""
