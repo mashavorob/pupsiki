@@ -33,19 +33,20 @@ local q_averager =
         , dealCost = 2                   -- биржевой сбор
 
         -- Параметры задаваемые вручную
-        , absPositionLimit = 2           -- максимальная приемлемая позиция (абсолютное ограничение)
+        , absPositionLimit = 3           -- максимальная приемлемая позиция (абсолютное ограничение)
         , relPositionLimit = 0.6         -- максимальная приемлемая позиция по отношению к размеру счета
 
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot  = 1400          -- коэффициент осреднения спот
-        , avgFactorTrend = 600           -- коэфициент осреднения тренда
-        , enterThreshold = 1e-6          -- порог чувствительности для входа в позицию
-        , exitThreshold  = 1e-6          -- порог чувствительности для выхода из позиции
+        , avgFactorSpot  = 300           -- коэффициент осреднения спот
+        , avgFactorTrend = 50            -- коэфициент осреднения тренда
+        , enterThreshold = 1e-3          -- порог чувствительности для входа в позицию
+        , exitThreshold  = 0             -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
-        , maxDeviation = 1
+        , maxDeviation = 2
+        , catchDeviation = 0.8
 
         
         , params = 
@@ -82,8 +83,8 @@ local q_averager =
 
         , ui_mapping =
             { { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" }
-            , { name="targetPos", title="Рас. позиция", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.3f" }
-            , { name="spot", title="Средняя цена", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.0f" }
+            , { name="targetPos", title="Рас. позиция", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.0f" }
+            , { name="spot", title="Средняя цена", ctype=QTABLE_STRING_TYPE, width=20, format="%s" }
             , { name="trend", title="Средний тренд", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.5f" }
             , { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=15, format="%s" }
             , { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=40, format="%s" }
@@ -141,6 +142,7 @@ function q_averager.create(etc)
                 , mid = 0
                 , avgMid = 0
                 , avgTrend = 0
+                , dev_2 = 0     -- deviation^2
                 , deviation = 0
                 }
 
@@ -239,12 +241,12 @@ function strategy:init()
 
     market.avgMid = false
     market.avgTrend = 0
-    market.deviation = false
+    market.dev_2 = false
 
     for i = first, n - 1 do
         local trade = getItem("all_trades", i)
         self.now = os.time(trade.datetime)
-        if trade.sec_code == self.etc.asset and trade.class_code == self.etc.class --[[and self:checkSchedule(currTime)]] then
+        if trade.sec_code == self.etc.asset and trade.class_code == self.etc.class and self:checkSchedule(self.now) then
             self:calcMarketParams(trade.price, trade.price)
             self.state.count = self.state.count + 1
         end
@@ -281,7 +283,10 @@ function strategy:onHaltCallback()
 end
 
 function strategy:onTransReply(reply)
-    q_order.onTransReply(reply)
+    local err = q_order.onTransReply(reply)
+    if err then 
+        self.ui_state.lastError = err
+    end
     self:updatePosition()
     self:onMarketShift()
 end
@@ -363,7 +368,7 @@ function strategy:onIdle(now)
 
     ui_state.position = state.position
     ui_state.targetPos = state.targetPos
-    ui_state.spot = state.market.avgMid 
+    ui_state.spot = string.format("%.0f /%.0f", state.market.avgMid, state.market.deviation)
     ui_state.trend = state.market.avgTrend
 
     local balance = q_utils.getBalance(self.etc.account)
@@ -429,9 +434,10 @@ function strategy:calcMarketParams(bid, offer)
     market.avgMid = market.avgMid + trend
     market.avgTrend = market.avgTrend + k2*(trend - market.avgTrend)
 
-    local dev = math.pow(market.mid - market.avgMid, 2)
-    market.deviation = market.deviation or dev
-    market.deviation = market.deviation + k1*(dev - market.deviation)
+    local dev_2 = math.pow(market.mid - market.avgMid, 2)
+    market.dev_2 = market.dev_2 or dev_2
+    market.dev_2 = market.dev_2 + k1*(dev_2 - market.dev_2)
+    market.deviation = math.sqrt(market.dev_2)
 end
 
 -- function returns operation, price
@@ -440,6 +446,8 @@ function strategy:calcPlannedPos()
     local etc = self.etc
     local state = self.state
     local market = state.market
+    
+    state.targetPos = 0
 
     local loss = state.balance.maxValue - state.balance.currValue
     if loss > etc.maxLoss then
@@ -447,12 +455,8 @@ function strategy:calcPlannedPos()
                                         , loss
                                         , etc.maxLoss
                                         )
-        state.targetPos = 0
-        self.state.halt = true
         return
     end
-
-    state.targetPos = 0
 
     if self.state.count <= 0 then
         self.state.state = "Недостаточно данных"
@@ -469,10 +473,10 @@ function strategy:calcPlannedPos()
 
     if state.targetPos < 0 and market.avgTrend > -etc.exitThreshold then
         state.targetPos = 0
-    end
-    if state.targetPos > 0 and market.avgTrend < etc.exitThreshold then
+    elseif state.targetPos > 0 and market.avgTrend < etc.exitThreshold then
         state.targetPos = 0
     end
+
     if state.targetPos == 0 then
         if market.avgTrend > etc.enterThreshold then
             state.targetPos = 1
@@ -502,12 +506,6 @@ function strategy:onMarketShift()
         return
     end
 
-    if state.targetPos == state.position and not state.order:isActive() then
-        state.phase = PHASE_HOLD
-        state.state = "Удержание позиции"
-        return
-    end
-
     local diff = state.targetPos - state.position
     if state.order:isActive() then
         state.phase = PHASE_WAIT
@@ -515,7 +513,7 @@ function strategy:onMarketShift()
         local res, err = true, ""
         if diff > 0 and state.order.operation == 'B' then
             -- check deviation
-            if state.order.price < market.offer - market.deviation*etc.maxDeviation then
+            if state.order.price < market.bid - market.deviation*etc.maxDeviation then
                 -- price went tooo far, cancel the order
                 res, err = state.order:kill()
                 state.phase = PHASE_CANCEL
@@ -523,13 +521,13 @@ function strategy:onMarketShift()
             end
         elseif diff < 0 and state.order.operation == 'S' then
             -- check deviation
-            if state.order.price > market.bid + market.deviation*etc.maxDeviation then
+            if state.order.price > market.offer + market.deviation*etc.maxDeviation then
                 -- price went tooo far, cancel the order
                 res, err = state.order:kill()
                 state.phase = PHASE_CANCEL
                 state.state = "Отмена ордера из-за отклонения цены" 
             end
-        else
+        elseif (diff > 0 and state.order.operation == 's') or (diff < 0 and state.order.operation == 'B') then
             local res, err = state.order:kill()
             state.phase = PHASE_CANCEL
             state.state = "Отмена ордера из-за изменения тренда" 
@@ -545,11 +543,29 @@ function strategy:onMarketShift()
         local res, err = true, ""
         if diff < 0 then
             state.state = state.targetPos == 0 and "Закрытие позиции" or "Открытие шорт"
-            res, err = state.order:send('S', market.offer, lotSize)
+            local price = math.floor(market.mid/etc.priceStepSize)*self.etc.priceStepSize
+            price = math.max(price, market.offer)
+            res, err = state.order:send('S', price, lotSize)
         else
             state.state = state.targetPos == 0 and "Закрытие позиции" or "Открытие лонг"
-            res, err = state.order:send('B', market.bid, lotSize)
+            local price = math.ceil(market.mid/etc.priceStepSize)*self.etc.priceStepSize
+            price = math.min(price, market.bid)
+            res, err = state.order:send('B', price, lotSize)
         end
+        self:checkStatus(res, err)
+    elseif state.position > 0 then
+        -- try to sell with profit
+        local price = math.ceil((market.mid + market.deviation*etc.catchDeviation)/etc.priceStepSize)*self.etc.priceStepSize
+        price = math.max(price, market.offer)
+        local res, err = state.order:send('S', price, state.position)
+        state.state = "Удержание позиции"
+        self:checkStatus(res, err)
+    elseif state.position < 0 then
+        -- try to buy with profit
+        local price = math.floor((market.mid - market.deviation*etc.catchDeviation)/etc.priceStepSize)*self.etc.priceStepSize
+        price = math.min(price, market.bid)
+        local res, err = state.order:send('B', price, -state.position)
+        state.state = "Удержание позиции"
         self:checkStatus(res, err)
     end
 end
