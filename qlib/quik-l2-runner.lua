@@ -147,6 +147,7 @@ function q_runner:onTransReply(reply)
     enrichRecord(reply)
     self.strategy:onTransReply(reply)
     self.logs.replyLog.write(reply)
+    self:logStatus()
 end
 
 function q_runner:onTrade(trade)

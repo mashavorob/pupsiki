@@ -22,6 +22,18 @@ local orderStatusSuccess =
     , [4] = true
     }
 
+local orderStatusError =
+    { [2] = "Ошибка передачи сообщения"
+    , [4] = "Транзакция не выполнена"
+    , [5] = "Транзакция не прошла проверку сервера QUIK"
+    , [6] = "Транзакция не прошла проверку лимитов сервера QUIK"
+    , [10] = "Транзакция не поддерживаеться системой"
+    , [11] = "Транзакция не прошла проверку цифровой подписи"
+    , [12] = "Истек таймаут ожидания"
+    , [13] = "Транзакция отвергнута так как ее выполнение могло привести к кросс-сделке"
+    }
+
+
 -- id -> order
 local allOrders = {}
 
@@ -63,7 +75,7 @@ end
 function q_order.onTransReply(reply)
     local orderObj = allOrders[reply.trans_id]
     if orderObj then
-        orderObj:onTransReply(reply)
+        return orderObj:onTransReply(reply)
     end
 end
 
@@ -189,12 +201,17 @@ function order:onTransReply(reply)
     end
     assert(reply.trans_id == self.id, "orders mismatch, expected " .. 
         tostring(self.id) .. ", got " .. tostring(reply.trans_id))
+
+    local err = orderStatusError[reply.status]
+    if err then
+        err = string.format("Ошибка транзакции: %s, %s", err, tostring(reply.result_msg))
+    end
   
     if not self.key then
         self.key = reply.order_num
     end
     
-    local inactive = bit.band(reply.flags, 1) == 0
+    local inactive = (bit.band(reply.flags, 1) == 0) or err
     if inactive then
         allOrders[self.id] = nil
         self.id = nil
@@ -205,12 +222,15 @@ function order:onTransReply(reply)
     if (reply.balance ~= 0 or inactive) and reply.balance ~= self.balance then
 
         local offset = self.balance - reply.balance
-        if bit.band(reply.flags, 4) ~= 0 then -- sell operation
+        if err then
+            offset = 0
+        elseif bit.band(reply.flags, 4) ~= 0 then -- sell operation
             offset = -offset
         end
         self.position = self.position + offset
         self.balance = reply.balance
     end
+    return err
 end
 
 function order:onDisconnected()
