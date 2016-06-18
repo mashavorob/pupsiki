@@ -25,7 +25,7 @@ local etc = {
     account = "SPBFUT005eC",
     firmid =  "SPBFUT589000",
 
-    asset = 'SiM6',
+    asset = 'SiU6',
     class = "SPBFUT",
 
     maxPriceLevel = 8,
