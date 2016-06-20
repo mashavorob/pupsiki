@@ -33,15 +33,15 @@ local q_averager =
         , dealCost = 2                   -- биржевой сбор
 
         -- Параметры задаваемые вручную
-        , absPositionLimit = 3           -- максимальная приемлемая позиция (абсолютное ограничение)
+        , absPositionLimit = 1           -- максимальная приемлемая позиция (абсолютное ограничение)
         , relPositionLimit = 0.6         -- максимальная приемлемая позиция по отношению к размеру счета
 
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot  = 300           -- коэффициент осреднения спот
+        , avgFactorSpot  = 50            -- коэффициент осреднения спот
         , avgFactorTrend = 50            -- коэфициент осреднения тренда
-        , enterThreshold = 1e-3          -- порог чувствительности для входа в позицию
+        , enterThreshold = 1e-4          -- порог чувствительности для входа в позицию
         , exitThreshold  = 0             -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
@@ -368,7 +368,7 @@ function strategy:onIdle(now)
 
     ui_state.position = state.position
     ui_state.targetPos = state.targetPos
-    ui_state.spot = string.format("%.0f /%.0f", state.market.avgMid, state.market.deviation)
+    ui_state.spot = string.format("%.0f /%.0f", state.market.avgMid or 0, state.market.deviation)
     ui_state.trend = state.market.avgTrend
 
     local balance = q_utils.getBalance(self.etc.account)
