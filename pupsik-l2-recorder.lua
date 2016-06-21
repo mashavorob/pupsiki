@@ -68,6 +68,7 @@ function l2r:onLogOpen()
             , SELDEPO = getParamEx(item.class, item.asset, "SELDEPO")
             , PRICEMIN = getParamEx(item.class, item.asset, "PRICEMIN")
             , PRICEMAX = getParamEx(item.class, item.asset, "PRICEMAX")
+            , EXCH_PAY = getParamEx(item.class, item.asset, "EXCH_PAY")
             }
         self:logItem { event="OnParams", class=item.class, asset=item.asset, params=params }
     end

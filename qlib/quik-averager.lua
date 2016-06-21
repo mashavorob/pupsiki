@@ -39,14 +39,17 @@ local q_averager =
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot  = 50            -- коэффициент осреднения спот
-        , avgFactorTrend = 50            -- коэфициент осреднения тренда
+        , avgFactorSpot  = 100            -- коэффициент осреднения спот
+        , avgFactorTrend = 100            -- коэфициент осреднения тренда
         , enterThreshold = 1e-4          -- порог чувствительности для входа в позицию
         , exitThreshold  = 0             -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
         , maxDeviation = 2
-        , catchDeviation = 0.8
+        , profitSpread = 1
+        , minProfit = 3                  -- минимальный ожидаемый профит для входа в позицию (в стоимости контракта)
+                                         --   стоимость открытия позиции + стоимость закрытия позиции + маржа
+        , minSpread = false              -- вычисляется из minProfit
 
         
         , params = 
@@ -211,6 +214,8 @@ end
 function strategy:updateParams()
     self.etc.priceStepSize = tonumber(getParamEx(self.etc.class, self.etc.asset, "SEC_PRICE_STEP").param_value)
     self.etc.priceStepValue = tonumber(getParamEx(self.etc.class, self.etc.asset, "STEPPRICE").param_value)
+    self.etc.dealCost = tonumber(getParamEx(self.etc.class, self.etc.asset, "EXCH_PAY").param_value)
+    self.etc.minSpread = math.ceil(self.etc.dealCost*self.etc.minProfit/self.etc.priceStepValue)*self.etc.priceStepSize
     assert(self.etc.priceStepSize > 0, "priceStepSize(" .. self.etc.asset .. ") = " .. self.etc.priceStepSize .. "\n" .. debug.traceback())
     assert(self.etc.priceStepValue > 0, "priceStepValue(" .. self.etc.asset .. ") = " .. self.etc.priceStepValue)
 end
@@ -478,9 +483,13 @@ function strategy:calcPlannedPos()
     end
 
     if state.targetPos == 0 then
-        if market.avgTrend > etc.enterThreshold then
+        if market.avgTrend > etc.enterThreshold 
+--            and market.deviation*etc.profitSpread > etc.minSpread 
+        then
             state.targetPos = 1
-        elseif market.avgTrend < -etc.enterThreshold then
+        elseif market.avgTrend < -etc.enterThreshold 
+--            and market.deviation*etc.profitSpread > etc.minSpread 
+        then
             state.targetPos = -1
         end
     end
@@ -555,14 +564,14 @@ function strategy:onMarketShift()
         self:checkStatus(res, err)
     elseif state.position > 0 then
         -- try to sell with profit
-        local price = math.ceil((market.mid + market.deviation*etc.catchDeviation)/etc.priceStepSize)*self.etc.priceStepSize
+        local price = math.ceil((market.mid + market.deviation*etc.profitSpread)/etc.priceStepSize)*self.etc.priceStepSize
         price = math.max(price, market.offer)
         local res, err = state.order:send('S', price, state.position)
         state.state = "Удержание позиции"
         self:checkStatus(res, err)
     elseif state.position < 0 then
         -- try to buy with profit
-        local price = math.floor((market.mid - market.deviation*etc.catchDeviation)/etc.priceStepSize)*self.etc.priceStepSize
+        local price = math.floor((market.mid - market.deviation*etc.profitSpread)/etc.priceStepSize)*self.etc.priceStepSize
         price = math.min(price, market.bid)
         local res, err = state.order:send('B', price, -state.position)
         state.state = "Удержание позиции"

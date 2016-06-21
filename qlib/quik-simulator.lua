@@ -26,6 +26,7 @@ local etc = {
     firmid =  "SPBFUT589000",
 
     asset = 'SiU6',
+--    asset = 'RIU6',
     class = "SPBFUT",
 
     maxPriceLevel = 8,
