@@ -31,6 +31,8 @@ l2r = {
     },
 }
 
+local clockOffset = 0
+
 function l2r:serializeItem(val)
     if type(val) == "string" then
         return string.format("%q", val)
@@ -145,7 +147,7 @@ end
 function l2r:onTrade(trade)
     for _, item in ipairs(self.assets) do
         if trade.class_code == item.class and trade.sec_code == item.asset then
-            self:logItem { event="onTrade", trade=trade }
+            self:logItem { event="onTrade", class=trade.class_code, asset=trade.sec_code, tstamp=os.clock()+clockOffset, trade=trade }
             break
         end
     end
@@ -154,7 +156,7 @@ end
 function l2r:onQuote(class, asset)
     for _, item in ipairs(self.assets) do
         if class == item.class and asset == item.asset then
-            self:logItem { event="onQuote", class=class, asset=asset, tstamp=os.clock(), l2=getQuoteLevel2(class, asset) }
+            self:logItem { event="onQuote", class=class, asset=asset, tstamp=os.clock()+clockOffset, l2=getQuoteLevel2(class, asset) }
             break
         end
     end
@@ -184,6 +186,18 @@ end
 
 local recorder = false
 
+function getClockOffset()
+    local start = os.time()
+
+    while true do
+        local now = os.time()
+        if now > start then
+            local clk = os.clock()
+            return now - clk
+        end
+    end
+end
+
 function OnInit(scriptPath)
     if not LUA_PATH then
         LUA_PATH = ""
@@ -212,6 +226,16 @@ function OnInit(scriptPath)
     assert(require("qlib/quik-fname"))
     q_fname.root = folder
 
+    getClockOffset()
+
+    local acc = 0
+    local num = 5
+    for i=1,num do
+        acc = acc + getClockOffset()
+    end
+    clockOffset = acc/num
+
+
     recorder = l2r.create()
     recorder:onInit()
 end
@@ -225,6 +249,7 @@ function OnQuote(class, asset)
 end
 
 function main()
+
     while not recorder:isClosed() do
         recorder:onIdle()
         sleep(100)

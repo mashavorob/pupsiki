@@ -20,7 +20,7 @@ assert(require("qlib/quik-time"))
 local q_averager = 
     { etc =  -- master configuration
         -- Главные параметры, задаваемые в ручную
-        { asset = "SiM6"                 -- бумага
+        { asset = "SiU6"                 -- бумага
         , class = "SPBFUT"               -- класс
         , title = "qaverager - [SiM6]"   -- заголовок таблицы
 
@@ -39,9 +39,9 @@ local q_averager =
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot  = 100            -- коэффициент осреднения спот
-        , avgFactorTrend = 100            -- коэфициент осреднения тренда
-        , enterThreshold = 1e-4          -- порог чувствительности для входа в позицию
+        , avgFactorSpot  = 45            -- коэффициент осреднения спот
+        , avgFactorTrend = 50            -- коэфициент осреднения тренда
+        , enterThreshold = 1e-6          -- порог чувствительности для входа в позицию
         , exitThreshold  = 0             -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры

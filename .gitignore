@@ -1,7 +1,13 @@
 **.swp
 .*
 **.wpos
+**.dll
+**.so
 logs/*.log
 logs/*.ods
 logs/*.txt
+docs/**
+data/**
+data
 conf
+bin
