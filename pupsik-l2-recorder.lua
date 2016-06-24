@@ -29,6 +29,7 @@ l2r = {
         { class='SPBFUT', asset='RIU6' },
         { class='SPBFUT', asset='SiU6' },
     },
+    quik_ext = nil,
 }
 
 function l2r:serializeItem(val)
@@ -139,13 +140,24 @@ function l2r:onInit()
     for _,item in ipairs(self.assets) do
         Subscribe_Level_II_Quotes(item.class, item.asset)
     end
+    self.quik_ext = require("quik_ext")
     self:onLogOpen()
 end
 
 function l2r:onTrade(trade)
     for _, item in ipairs(self.assets) do
         if trade.class_code == item.class and trade.sec_code == item.asset then
-            self:logItem { event="onTrade", class=trade.class_code, asset=trade.sec_code, trade=trade }
+            local receivedAt = self.quik_ext.gettime()
+            local sentAt = os.time(trade.datetime) + trade.datetime.mcs/1e6
+            self:logItem 
+                { event="onTrade"
+                , received_time = receivedAt
+                , exchange_time = sentAt
+                , delay = receivedAt - sentAt
+                , class = trade.class_code
+                , asset = trade.sec_code
+                , trade = trade 
+                }
             break
         end
     end
@@ -154,7 +166,7 @@ end
 function l2r:onQuote(class, asset)
     for _, item in ipairs(self.assets) do
         if class == item.class and asset == item.asset then
-            self:logItem { event="onQuote", class=class, asset=asset, l2=getQuoteLevel2(class, asset) }
+            self:logItem { event="onQuote", time=self.quik_ext.gettime(), class=class, asset=asset, l2=getQuoteLevel2(class, asset) }
             break
         end
     end
@@ -208,6 +220,8 @@ function OnInit(scriptPath)
         LUA_PATH = LUA_PATH .. ";"
     end
     LUA_PATH = LUA_PATH .. ".\\?.lua;" .. folder .. "?.lua"
+    
+    package.cpath = package.cpath .. ";.\\lib?.dll;?.dll;" .. folder .. "lib?.dll;" .. folder .. "?.dll"
 
     assert(require("qlib/quik-fname"))
     q_fname.root = folder

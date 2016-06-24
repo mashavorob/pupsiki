@@ -48,12 +48,7 @@ function OnInit(scriptPath)
     end
     LUA_PATH = LUA_PATH .. ".\\?.lua;" .. folder .. "?.lua"
     
-    --[[
     package.cpath = package.cpath .. ";.\\lib?.dll;?.dll;" .. folder .. "lib?.dll;" .. folder .. "?.dll"
-    local q_ext = require("quik_ext")
-    message(string.format("q_ext.gettime() = %s, os.time() = %s", tostring(q_ext.gettime()), tostring(os.time())), 3)
-    local q_ext_init = assert(package.loadlib("c:\\BCS_Work\\quik\\lua\\libquik_ext.dll", "_luaopen_quik_ext"))
-    ]]
 
     assert(require("qlib/quik-fname"))
     assert(require("qlib/quik-utils"))

@@ -19,8 +19,6 @@ static const double SEC_TO_UNIX_EPOCH = 11644473600.0;
 
 static int l_gettime(lua_State *L)
 {
-    
-   
 #if 0
     union {
         FILETIME ft;

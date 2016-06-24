@@ -47,9 +47,7 @@ local q_averager =
         -- Вспомогательные параметры
         , maxDeviation = 1
         , profitSpread = 0.7
-        , minProfit = 4                  -- минимальный ожидаемый профит для входа в позицию (в стоимости контракта)
-                                         --   стоимость открытия позиции + стоимость закрытия позиции + маржа
-        , minSpread = false              -- вычисляется из minProfit
+        , minSpread = 5                  -- стоимость открытия позиции + стоимость закрытия позиции + маржа
 
         
         , params = 
@@ -215,7 +213,6 @@ function strategy:updateParams()
     self.etc.priceStepSize = tonumber(getParamEx(self.etc.class, self.etc.asset, "SEC_PRICE_STEP").param_value)
     self.etc.priceStepValue = tonumber(getParamEx(self.etc.class, self.etc.asset, "STEPPRICE").param_value)
     self.etc.dealCost = tonumber(getParamEx(self.etc.class, self.etc.asset, "EXCH_PAY").param_value)
-    self.etc.minSpread = math.ceil(self.etc.dealCost*self.etc.minProfit/self.etc.priceStepValue)*self.etc.priceStepSize
     assert(self.etc.priceStepSize > 0, "priceStepSize(" .. self.etc.asset .. ") = " .. self.etc.priceStepSize .. "\n" .. debug.traceback())
     assert(self.etc.priceStepValue > 0, "priceStepValue(" .. self.etc.asset .. ") = " .. self.etc.priceStepValue)
 end

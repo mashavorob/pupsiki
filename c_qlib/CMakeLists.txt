@@ -28,7 +28,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     target_link_libraries(
         quik_ext
         ntdll.dll
-        lua5.1.dll
+        lua5.1.lib
         )
 
 else()

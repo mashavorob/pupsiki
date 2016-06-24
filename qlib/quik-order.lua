@@ -81,7 +81,7 @@ end
 
 function q_order.onTrade(trade)
     local lastTransId = getLastTransId()
-    if lastTransId > transId then
+    if not transId or lastTransId > transId then
         transId = lastTransId
     end
 end
