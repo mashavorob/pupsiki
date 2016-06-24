@@ -1,0 +1,3 @@
+LIBRARY libquik_ext
+EXPORTS
+    luaopen_quik_ext @1

@@ -19,16 +19,24 @@ endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/c_ext.h.in" "${CMAKE_CURRENT_BINARY_DIR}/c_ext.h")
 
-add_library( quik_ext SHARED 
-    c_ext.c
-    )
-
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+
+    add_library( quik_ext SHARED 
+        c_ext.c
+        )
+
     target_link_libraries(
         quik_ext
         ntdll.dll
         lua5.1.dll
         )
+
+else()
+
+    add_library( quik_ext SHARED 
+        c_ext.c
+        )
+
 endif()
 
 get_property(quik_ext_location TARGET quik_ext PROPERTY LOCATION)

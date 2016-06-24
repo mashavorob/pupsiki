@@ -3,7 +3,10 @@
 #if USE_WIN32
 
 #include <windows.h>
+#define DLLEXPORT __declspec(dllexport)
 
+#else
+#define DLLEXPORT
 #endif
 
 #include <time.h>
@@ -17,20 +20,24 @@ static const double SEC_TO_UNIX_EPOCH = 11644473600.0;
 static int l_gettime(lua_State *L)
 {
     
+   
+#if 0
     union {
-        FILETIME  ft;
+        FILETIME ft;
+        ULONGLONG ull;
+    } u = {0};
+    const double scale = 1.0e9;
+    GetSystemTimePreciseAsFileTime(&u.ft);
+#else
+    union {
         LARGE_INTEGER li;
         ULONGLONG ull;
-    } u;
-    /*
-    //GetSystemTimePreciseAsFileTime(&u.ft);
-    SYSTEMTIME wtm;
-    GetSystemTime(&wtm);
-    SystemTimeToFileTime(&wtm, &u.ft);
-    */
+    } u = {0};
+    const double scale = 1.0e7;
     NtQuerySystemTime(&u.li);
+#endif
 
-    const double win32Epoch = ((double)u.ull)/1.0e7;
+    const double win32Epoch = ((double)u.ull)/scale;
     const double unixEpoch = win32Epoch - SEC_TO_UNIX_EPOCH;
 
     lua_pushnumber(L, (lua_Number)(unixEpoch));
@@ -54,7 +61,7 @@ static const struct luaL_reg mylib [2] =
     , {NULL, NULL}  /* sentinel */
     };
 
-int luaopen_quik_ext(lua_State *L)
+DLLEXPORT int luaopen_quik_ext(lua_State *L)
 {
     luaL_openlib(L, "quik_ext", mylib, 0);
     return 1;
