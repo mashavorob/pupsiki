@@ -20,6 +20,8 @@ local etc = {
     class = "SPBFUT",
 }
 
+quik_ext = nil
+
 scriptFolder = nil
 
 function OnInit(scriptPath)
@@ -49,6 +51,7 @@ function OnInit(scriptPath)
     LUA_PATH = LUA_PATH .. ".\\?.lua;" .. folder .. "?.lua"
     
     package.cpath = package.cpath .. ";.\\lib?.dll;?.dll;" .. folder .. "lib?.dll;" .. folder .. "?.dll"
+    quik_ext = require("quik_ext")
 
     assert(require("qlib/quik-fname"))
     assert(require("qlib/quik-utils"))

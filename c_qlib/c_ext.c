@@ -26,13 +26,24 @@ static int l_gettime(lua_State *L)
     } u = {0};
     const double scale = 1.0e9;
     GetSystemTimePreciseAsFileTime(&u.ft);
-#else
+#elif 0
     union {
         LARGE_INTEGER li;
         ULONGLONG ull;
     } u = {0};
     const double scale = 1.0e7;
     NtQuerySystemTime(&u.li);
+#else
+    union {
+        FILETIME ft;
+        ULONGLONG ull;
+    } u = {0};
+    const double scale = 1.0e7;
+
+    SYSTEMTIME st = {0};
+    GetSystemTime(&st);
+    SystemTimeToFileTime(&st, &u.ft);
+
 #endif
 
     const double win32Epoch = ((double)u.ull)/scale;

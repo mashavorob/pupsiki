@@ -67,6 +67,7 @@ function q_order.create(account, class, asset)
 
         , balance = 0       -- Quantity
         , position = 0      -- Generated position
+        ,  
         }
     setmetatable(self, { __index = order })
     return self
@@ -77,6 +78,7 @@ function q_order.onTransReply(reply)
     if orderObj then
         return orderObj:onTransReply(reply)
     end
+    return true, false, ""
 end
 
 function q_order.onTrade(trade)
@@ -184,6 +186,7 @@ function order:send(operation, price, size)
         PRICE=tostring(self.price),
         QUANTITY=tostring(self.size),
     }
+    self.sentAt = quik_ext.gettime()
     local res = sendTransaction(transaction)
     if res == "" then
         return true, ""
@@ -197,13 +200,21 @@ end
 
 function order:onTransReply(reply)
     if reply.trans_id == 0 then
-        return
+        return true, false, ""
     end
     assert(reply.trans_id == self.id, "orders mismatch, expected " .. 
         tostring(self.id) .. ", got " .. tostring(reply.trans_id))
 
+    local status = true
+    local delay = false
+    if self.sentAt then
+        delay = quik_ext.gettime() - self.sentAt
+        self.sentAt = nil
+    end
+
     local err = orderStatusError[reply.status]
     if err then
+        status = false
         err = string.format("Ошибка транзакции: %s, %s", err, tostring(reply.result_msg))
     end
   
@@ -230,7 +241,7 @@ function order:onTransReply(reply)
         self.position = self.position + offset
         self.balance = reply.balance
     end
-    return err
+    return status, delay, (err or "")
 end
 
 function order:onDisconnected()

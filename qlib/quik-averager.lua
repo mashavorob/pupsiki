@@ -48,6 +48,7 @@ local q_averager =
         , maxDeviation = 1
         , profitSpread = 0.7
         , minSpread = 5                  -- стоимость открытия позиции + стоимость закрытия позиции + маржа
+        , avgFactorDelay = 20            -- коэффициент осреднения задержек Quik
 
         
         , params = 
@@ -83,13 +84,15 @@ local q_averager =
         }
 
         , ui_mapping =
-            { { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" }
-            , { name="targetPos", title="Рас. позиция", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.0f" }
-            , { name="spot", title="Средняя цена", ctype=QTABLE_STRING_TYPE, width=20, format="%s" }
-            , { name="trend", title="Средний тренд", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.5f" }
-            , { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=15, format="%s" }
+            { { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=12, format="%.0f" }
+            , { name="targetPos", title="Рас.позиция", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" }
+            , { name="spot", title="Средняя цена", ctype=QTABLE_STRING_TYPE, width=17, format="%s" }
+            , { name="trend", title="Средний тренд", ctype=QTABLE_DOUBLE_TYPE, width=17, format="%.5f" }
+            , { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=30, format="%s" }
+            , { name="dataLatencies", title="Задер.данных (ms)", ctype=QTABLE_STRING_TYPE, width=20, format="%s" }
+            , { name="ordersLatencies", title="Задер.заявок (ms)", ctype=QTABLE_STRING_TYPE, width=20, format="%s" }
             , { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=40, format="%s" }
-            , { name="lastError", title="Результат последней операции", ctype=QTABLE_STRING_TYPE, width=40, format="%s" }
+            , { name="lastError", title="Результат последней операции", ctype=QTABLE_STRING_TYPE, width=45, format="%s" }
         }
     }
 
@@ -119,6 +122,8 @@ function q_averager.create(etc)
             , spot = "--"
             , trend = "--"
             , balance = "-- / --"
+            , dataLatencies = "-- / --"
+            , ordersLatencies = "-- / --"
             , state = "--"
             , lastError = "--" 
             }
@@ -285,8 +290,18 @@ function strategy:onHaltCallback()
 end
 
 function strategy:onTransReply(reply)
-    local err = q_order.onTransReply(reply)
-    if err then 
+    local status, delay, err = q_order.onTransReply(reply)
+
+    if delay then
+        local k= 1/(1 + self.etc.avgFactorDelay)
+        self.state.ordersDelay = self.state.ordersDelay or delay
+        self.state.ordersDelay = self.state.ordersDelay + k*(delay - self.state.ordersDelay)
+        local sigma = math.pow(self.state.ordersDelay - delay, 2)
+        self.state.ordersDelayDev2 = self.state.ordersDelayDev2 or 0
+        self.state.ordersDelayDev2 = self.state.ordersDelayDev2 + k*(sigma - self.state.ordersDelayDev2)
+        self.state.ordersDelayDev = math.sqrt(self.state.ordersDelayDev2)
+    end
+    if not status then 
         self.ui_state.lastError = err
     end
     self:updatePosition()
@@ -299,6 +314,18 @@ function strategy:onTrade(trade)
 end
 
 function strategy:onAllTrade(trade)
+    local receivedAt = quik_ext.gettime()
+    local sentAt = os.time(trade.datetime) + trade.datetime.mcs/1e6
+    local delay = receivedAt - sentAt
+
+    local k= 1/(1 + self.etc.avgFactorDelay)
+    self.state.tradesDelay = self.state.tradesDelay or delay
+    self.state.tradesDelay = self.state.tradesDelay + k*(delay - self.state.tradesDelay)
+    local sigma = math.pow(self.state.tradesDelay - delay, 2)
+    self.state.tradesDelayDev2 = self.state.tradesDelayDev2 or 0
+    self.state.tradesDelayDev2 = self.state.tradesDelayDev2 + k*(sigma - self.state.tradesDelayDev2)
+    self.state.tradesDelayDev = math.sqrt(self.state.tradesDelayDev2)
+    
 end
 
 function strategy:checkL2()
@@ -394,6 +421,17 @@ function strategy:onIdle(now)
         ui_state.state = "Остановка по расписанию"
     else
         ui_state.state = state.state
+    end
+
+    if state.ordersDelay then
+        ui_state.ordersLatencies = string.format("%.0f / %.0f", state.ordersDelay*1000, (state.ordersDelayDev or 0)*1000)
+    else
+        ui_state.ordersLatencies = "-- / --"
+    end
+    if state.tradesDelay then
+        ui_state.dataLatencies = string.format("%.0f / %.0f", state.tradesDelay*1000, (state.tradesDelayDev or 0)*1000)
+    else
+        ui_state.dataLatencies = "-- / --"
     end
 
     ui_state.lastError = "--"
