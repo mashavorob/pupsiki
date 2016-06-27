@@ -33,7 +33,7 @@ local q_averager =
         , dealCost = 2                   -- биржевой сбор
 
         -- Параметры задаваемые вручную
-        , absPositionLimit = 1           -- максимальная приемлемая позиция (абсолютное ограничение)
+        , absPositionLimit = 2           -- максимальная приемлемая позиция (абсолютное ограничение)
         , relPositionLimit = 0.6         -- максимальная приемлемая позиция по отношению к размеру счета
 
         , maxLoss = 1000                 -- максимальная приемлимая потеря
@@ -156,6 +156,7 @@ function q_averager.create(etc)
             , position = 0
             
             , order = { }
+            , take_profit = { } -- multiply orders
             , state = "--"
             , count = -1000
             }
@@ -265,8 +266,70 @@ end
 
 function strategy:updatePosition()
     local state = self.state
+    local tp_size = 0
+    local inactive = {}
+    -- update position
+    for i,order in ipairs(state.take_profit) do
+        if order.position ~= 0 then
+            state.position = state.position + order.position
+            order.position = 0
+        end
+        if order.operation == 'B' then
+            tp_size = tp_size + order.size
+        else
+            tp_size = tp_size - order.size
+        end
+    end
+
     state.position = state.position + state.order.position
     state.order.position = 0
+
+    -- check state
+    if state.cancel or state.pause or state.halt then
+        return
+    end
+
+    -- position is being changed, there is no need to create take-profit orders
+    if state.position*state.targetPos <= 0 then
+        return
+    end
+
+    -- how much lots have been realized
+    local openPos = state.order.size - state.order.balance
+    if state.order.operation == 'S' then
+        openPos = -openPos
+    end
+
+    -- create take profit orders to neitralize bought/sold orders
+    local diff = openPos + tp_size
+    if diff == 0 then
+        return
+    end
+
+    local order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
+    local market = state.market
+    local etc = self.etc
+    local price = 0
+
+    if state.take_profit[1] then
+        price = state.take_profit[1].price
+    elseif diff > 0 then
+        -- try to sell with profit
+        price = math.ceil((state.order.price + market.deviation*etc.profitSpread)/etc.priceStepSize)*etc.priceStepSize
+        price = math.max(price, market.offer)
+    else
+        -- try to buy with profit
+        price = math.floor((state.order.price - market.deviation*etc.profitSpread)/etc.priceStepSize)*etc.priceStepSize
+        price = math.min(price, market.bid)
+    end
+    
+    local res, err = order:send((diff > 0) and 'S' or 'B', price, math.abs(diff))
+
+    if res then
+        table.insert(state.take_profit, order)
+    end
+    state.state = "Удержание позиции"
+    self:checkStatus(res, err)
 end
 
 function strategy:onStartTrading()
@@ -364,14 +427,14 @@ function strategy:onIdle(now)
     if state.cancel then
         ui_state.state = "Ликвидация"
 
-        local active = state.order:isActive() or state.order:isPending()
-
-        if state.phase ~= PHASE_CANCEL and state.order:isActive() then
-            local res, err = state.order:kill()
+        local pending, active = self:checkOrders()
+        
+        if active and not pending then
+            local res, err = self:killOrders()
             self:checkStatus(res, err)
         end
 
-        if not active then
+        if not active and not pending then
             if not self:checkSchedule() then
                 state.state = "Остановка по расписанию"
             elseif state.position > 0 then
@@ -409,10 +472,10 @@ function strategy:onIdle(now)
                                     , state.balance.currValue - state.balance.maxValue
                                     )
 
-    if state.order:isPending() then
-        ui_state.state = string.format("Отправка заявки (%s: %s %s)", state.state, state.order.operation, state.order.price)
-    elseif state.order:isActive() then
-        ui_state.state = string.format("Ожидание исполнения заявки (%s: %s %s)", state.state, state.order.operation, state.order.price)
+    if pending then
+        ui_state.state = "Отправка заявки"
+    elseif active then
+        ui_state.state = "Ожидание исполнения заявки"
     elseif state.pause then
         ui_state.state = "Пауза"
     elseif state.halt then
@@ -502,7 +565,6 @@ function strategy:calcPlannedPos()
         self.state.state = "Недостаточно данных"
         return
     end
-
     if state.halt or state.pause or state.cancel then
         return
     end
@@ -518,17 +580,45 @@ function strategy:calcPlannedPos()
     end
 
     if state.targetPos == 0 then
-        if market.avgTrend > etc.enterThreshold 
---            and market.deviation*etc.profitSpread > etc.minSpread 
-        then
+        if market.avgTrend > etc.enterThreshold then
             state.targetPos = 1
-        elseif market.avgTrend < -etc.enterThreshold 
---            and market.deviation*etc.profitSpread > etc.minSpread 
-        then
+        elseif market.avgTrend < -etc.enterThreshold then
             state.targetPos = -1
         end
     end
     state.targetPos = state.targetPos*self:getLimit()
+end
+
+function strategy:killOrders()
+    local state = self.state
+    local res, err = true, ""
+
+    if state.order:isActive() then
+        res, err = state.order:kill()
+    end
+
+    for _,order in ipairs(state.take_profit) do
+        if order:isActive() then
+            local tp_res, tp_err = order:kill()
+            if not tp_res and res then
+                res, err = tp_res, tp_err
+            end
+        end
+    end
+    return res, err
+end
+
+function strategy:checkOrders()
+    local state = state
+
+    local pending = state.order:isPending()
+    local active = state.order:isActive()
+
+    for _, order in ipairs(state.take_profit) do
+        pending = pending or order:isPending()
+        active = active or order:isActive()
+    end
+    return pending, active
 end
 
 function strategy:onMarketShift()
@@ -538,41 +628,41 @@ function strategy:onMarketShift()
     local market = state.market
     
     -- check halts and pending orders
-    if self.state.halt or self.state.cancel or self.state.pause or state.order:isPending() then
+    if self.state.halt or self.state.cancel or self.state.pause then
         return
     end
 
-    if state.order:isPending() then
-        -- order is being sent to the venue
-        -- nothing can be done until operation finishes
-        state.phase = PHASE_WAIT
-        state.state = "Отправка ордера"
+    local pending, active = self:checkOrders()
+
+    if pending then
         return
     end
 
     local diff = state.targetPos - state.position
-    if state.order:isActive() then
+
+    if active then
         state.phase = PHASE_WAIT
         state.state = "Ожидание исполнения ордера"
         local res, err = true, ""
         if diff > 0 and state.order.operation == 'B' then
             -- check deviation
             if state.order.price < market.bid - market.deviation*etc.maxDeviation then
-                -- price went tooo far, cancel the order
-                res, err = state.order:kill()
+                -- price went too far, cancel the orders
+                res, err = self:killOrders()
                 state.phase = PHASE_CANCEL
-                state.state = "Отмена ордера из-за отклонения цены" 
+                state.state = "Отмена ордера из-за отклонения цены"
+                
             end
         elseif diff < 0 and state.order.operation == 'S' then
             -- check deviation
             if state.order.price > market.offer + market.deviation*etc.maxDeviation then
-                -- price went tooo far, cancel the order
-                res, err = state.order:kill()
+                -- price went too far, cancel the orders
+                res, err = self:killOrders()
                 state.phase = PHASE_CANCEL
                 state.state = "Отмена ордера из-за отклонения цены" 
             end
-        elseif (diff > 0 and state.order.operation == 's') or (diff < 0 and state.order.operation == 'B') then
-            local res, err = state.order:kill()
+        elseif (diff > 0 and state.order.operation == 'S') or (diff < 0 and state.order.operation == 'B') then
+            res, err = self:killOrders()
             state.phase = PHASE_CANCEL
             state.state = "Отмена ордера из-за изменения тренда" 
         end
@@ -580,37 +670,26 @@ function strategy:onMarketShift()
         -- wait while the order is canceled
         return
     elseif diff ~= 0 then
+        state.take_profit = {} -- discard inactive take-profit orders
         state.phase = PHASE_WAIT
         state.state = "Отправка ордера"
         -- lot cannot be bigger
         local lotSize = math.min(math.abs(diff), self:getLimit(2*etc.absPositionLimit, 2*self.etc.relPositionLimit))
         local res, err = true, ""
         if diff < 0 then
-            state.state = state.targetPos == 0 and "Закрытие позиции" or "Открытие шорт"
+            state.state = (state.targetPos < 0) and "Открытие шорт" or "Закрытие лонг"
             local price = math.floor(market.mid/etc.priceStepSize)*self.etc.priceStepSize
             price = math.max(price, market.offer)
             res, err = state.order:send('S', price, lotSize)
         else
-            state.state = state.targetPos == 0 and "Закрытие позиции" or "Открытие лонг"
+            state.state = (state.targetPos > 0) and "Открытие лонг" or "Закрыте шорт"
             local price = math.ceil(market.mid/etc.priceStepSize)*self.etc.priceStepSize
             price = math.min(price, market.bid)
             res, err = state.order:send('B', price, lotSize)
         end
         self:checkStatus(res, err)
-    elseif state.position > 0 then
-        -- try to sell with profit
-        local price = math.ceil((market.mid + market.deviation*etc.profitSpread)/etc.priceStepSize)*self.etc.priceStepSize
-        price = math.max(price, market.offer)
-        local res, err = state.order:send('S', price, state.position)
+    else
         state.state = "Удержание позиции"
-        self:checkStatus(res, err)
-    elseif state.position < 0 then
-        -- try to buy with profit
-        local price = math.floor((market.mid - market.deviation*etc.profitSpread)/etc.priceStepSize)*self.etc.priceStepSize
-        price = math.min(price, market.bid)
-        local res, err = state.order:send('B', price, -state.position)
-        state.state = "Удержание позиции"
-        self:checkStatus(res, err)
     end
 end
 
