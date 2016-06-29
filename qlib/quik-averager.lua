@@ -47,7 +47,7 @@ local q_averager =
         -- Вспомогательные параметры
         , maxDeviation = 1
         , profitSpread = 0.7
-        , minSpread = 5                  -- стоимость открытия позиции + стоимость закрытия позиции + маржа
+        , spread = 5                  -- стоимость открытия позиции + стоимость закрытия позиции + маржа
         , avgFactorDelay = 20            -- коэффициент осреднения задержек Quik
 
         
@@ -72,6 +72,7 @@ local q_averager =
               , step=1e-5
               , precision=1e-7 
               }
+            , { name="spread", min=1, max=1e32, step=10, precision=1 }
             } 
         -- расписание работы
         , schedule = 
@@ -176,6 +177,9 @@ function q_averager.create(etc)
                               , self.title
                               , self.etc.asset
                               )
+    if global_suffix then
+        self.title = self.title .. "-" .. tostring(global_suffix)
+    end
 
     return self
 end
@@ -219,7 +223,7 @@ function strategy:updateParams()
     self.etc.priceStepSize = tonumber(getParamEx(self.etc.class, self.etc.asset, "SEC_PRICE_STEP").param_value)
     self.etc.priceStepValue = tonumber(getParamEx(self.etc.class, self.etc.asset, "STEPPRICE").param_value)
     self.etc.dealCost = tonumber(getParamEx(self.etc.class, self.etc.asset, "EXCH_PAY").param_value)
-    assert(self.etc.priceStepSize > 0, "priceStepSize(" .. self.etc.asset .. ") = " .. self.etc.priceStepSize .. "\n" .. debug.traceback())
+    assert(self.etc.priceStepSize > 0, "priceStepSize(" .. self.etc.asset .. ") = " .. self.etc.priceStepSize)
     assert(self.etc.priceStepValue > 0, "priceStepValue(" .. self.etc.asset .. ") = " .. self.etc.priceStepValue)
 end
 
@@ -266,7 +270,7 @@ end
 
 function strategy:updatePosition()
     local state = self.state
-    local tp_size = 0
+    local tp_balance = 0
     local inactive = {}
     -- update position
     for i,order in ipairs(state.take_profit) do
@@ -274,10 +278,12 @@ function strategy:updatePosition()
             state.position = state.position + order.position
             order.position = 0
         end
-        if order.operation == 'B' then
-            tp_size = tp_size + order.size
-        else
-            tp_size = tp_size - order.size
+        if order:isActive() or order:isPending() then
+            if order.operation == 'B' then
+                tp_balance = tp_balance + order.balance
+            else
+                tp_balance = tp_balance - order.balance
+            end
         end
     end
 
@@ -294,14 +300,8 @@ function strategy:updatePosition()
         return
     end
 
-    -- how much lots have been realized
-    local openPos = state.order.size - state.order.balance
-    if state.order.operation == 'S' then
-        openPos = -openPos
-    end
-
     -- create take profit orders to neitralize bought/sold orders
-    local diff = openPos + tp_size
+    local diff = state.position + tp_balance
     if diff == 0 then
         return
     end
@@ -309,18 +309,16 @@ function strategy:updatePosition()
     local order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
     local market = state.market
     local etc = self.etc
-    local price = 0
+    local price = nil
 
     if state.take_profit[1] then
         price = state.take_profit[1].price
     elseif diff > 0 then
         -- try to sell with profit
-        price = math.ceil((state.order.price + market.deviation*etc.profitSpread)/etc.priceStepSize)*etc.priceStepSize
-        price = math.max(price, market.offer)
+        price = math.max(state.order.price + etc.spread, market.offer - etc.priceStepSize)
     else
         -- try to buy with profit
-        price = math.floor((state.order.price - market.deviation*etc.profitSpread)/etc.priceStepSize)*etc.priceStepSize
-        price = math.min(price, market.bid)
+        price = math.min(state.order.price - etc.spread, market.bid + etc.priceStepSize)
     end
     
     local res, err = order:send((diff > 0) and 'S' or 'B', price, math.abs(diff))
@@ -410,12 +408,12 @@ function strategy:onQuote(class, asset)
     end
     if self:checkL2() then
         self:calcPlannedPos()
-        self:updatePosition()
         self:onMarketShift()
     end
 end
 
 function strategy:onIdle(now)
+
     self.now = now or os.time()
     q_order.onIdle()
     self:updatePosition()
@@ -463,9 +461,11 @@ function strategy:onIdle(now)
     ui_state.spot = string.format("%.0f /%.0f", state.market.avgMid or 0, state.market.deviation)
     ui_state.trend = state.market.avgTrend
 
-    local balance = q_utils.getBalance(self.etc.account)
-    state.balance.maxValue = math.max(state.balance.maxValue, balance)
-    state.balance.currValue = balance
+    if self:checkSchedule() then
+        local balance = q_utils.getBalance(self.etc.account)
+        state.balance.maxValue = math.max(state.balance.maxValue, balance)
+        state.balance.currValue = balance
+    end
 
     ui_state.balance = string.format( "%.0f / %.0f"
                                     , state.balance.currValue - state.balance.atStart
@@ -492,7 +492,10 @@ function strategy:onIdle(now)
         ui_state.ordersLatencies = "-- / --"
     end
     if state.tradesDelay then
-        ui_state.dataLatencies = string.format("%.0f / %.0f", state.tradesDelay*1000, (state.tradesDelayDev or 0)*1000)
+        ui_state.dataLatencies = string.format( "%.0f / %.0f"
+                                              , state.tradesDelay*1000
+                                              , (state.tradesDelayDev or 0)*1000
+                                              )
     else
         ui_state.dataLatencies = "-- / --"
     end
@@ -609,7 +612,7 @@ function strategy:killOrders()
 end
 
 function strategy:checkOrders()
-    local state = state
+    local state = self.state
 
     local pending = state.order:isPending()
     local active = state.order:isActive()
@@ -678,12 +681,12 @@ function strategy:onMarketShift()
         local res, err = true, ""
         if diff < 0 then
             state.state = (state.targetPos < 0) and "Открытие шорт" or "Закрытие лонг"
-            local price = math.floor(market.mid/etc.priceStepSize)*self.etc.priceStepSize
+            local price = math.ceil(market.mid/etc.priceStepSize)*self.etc.priceStepSize
             price = math.max(price, market.offer)
             res, err = state.order:send('S', price, lotSize)
         else
             state.state = (state.targetPos > 0) and "Открытие лонг" or "Закрыте шорт"
-            local price = math.ceil(market.mid/etc.priceStepSize)*self.etc.priceStepSize
+            local price = math.floor(market.mid/etc.priceStepSize)*self.etc.priceStepSize
             price = math.min(price, market.bid)
             res, err = state.order:send('B', price, lotSize)
         end
