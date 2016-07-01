@@ -11,16 +11,18 @@
 # or enable modeline in your .vimrc
 ]]
 
-q_order = {}
+q_order = 
+    { counters = {}
+    } 
 
-local order = { }
-
-local orderStatusSuccess =
-    -- see https://forum.quik.ru/forum10/topic604/
-    { [1] = true
-    , [3] = true -- completed
-    , [4] = true
-    }
+local order =
+    { operation = false
+    , trans_id = false
+    , order_num = false
+    , pending = false   -- pending flag
+    , active = false    -- active flag
+    , ttl = 0
+    } 
 
 local orderStatusError =
     { [2] = "Ошибка передачи сообщения"
@@ -33,24 +35,35 @@ local orderStatusError =
     , [13] = "Транзакция отвергнута так как ее выполнение могло привести к кросс-сделке"
     }
 
+local TIME_TO_LIVE = 5
 
--- id -> order
+-- trans_id -> order
 local allOrders = {}
 
-local transId = false
+-- killer.trans_id -> victim.trans_id
+local killTargets = {}
 
-local function getLastTransId()
-    local lastTransId = 0
-    local n = getNumberOf("orders")
-    for i = 1, n-1 do
-        local index = n -i
-        local id = getItem("orders", index).trans_id
-        if id > 0 then 
-            lastTransId = math.ceil(id/10)*10
-            break
-        end
+function q_order.getCounters(account, class, asset)
+    local counters = q_order.counters[account]
+    if not counters then
+        counters = {}
+        q_order.counters[account] = counters
     end
-    return lastTransId
+    local classCounters = counters[class]
+    if not classCounters then
+        classCounters = {}
+        counters[class] = classCounters
+    end
+    local assetCounters = classCounters[asset]
+    if not assetCounters then
+        assetCounters = 
+            { money = 0
+            , contracts = 0
+            , position = 0
+            }
+        classCounters[asset] = assetCounters
+    end
+    return assetCounters
 end
 
 function q_order.create(account, class, asset)
@@ -58,88 +71,132 @@ function q_order.create(account, class, asset)
         { account = account
         , class = class
         , asset = asset
-
-        , operation = false
-
-        , id = false        -- TRANS_ID
-        , key = false       -- ORDER_NUM
-        , status = false    -- STATUS
-
-        , balance = 0       -- Quantity
-        , position = 0      -- Generated position
-        ,  
+        , counters = q_order.getCounters(account, class, asset)
         }
     setmetatable(self, { __index = order })
     return self
 end
 
 function q_order.onTransReply(reply)
-    local orderObj = allOrders[reply.trans_id]
-    if orderObj then
-        return orderObj:onTransReply(reply)
+    local order = allOrders[reply.trans_id]
+    if order then
+        return order:onTransReply(reply)
+    end
+    local trans_id = killTargets[reply.tras_id]
+    if trans_id then
+        killTargets[reply.trans_id] = nil
+        order = allOrders[trans_id]
+        if order then
+            order:onKillReply(reply)
+        end
     end
     return true, false, ""
 end
 
 function q_order.onTrade(trade)
-    local lastTransId = getLastTransId()
-    if not transId or lastTransId > transId then
-        transId = lastTransId
+    local order = allOrders[trade.trans_id]
+    if not order then
+        return
+    end
+    if order.trades[trade.trade_num] then
+        return
+    end
+    
+    --message(string.format("New Trade detected for: order_num=%s, trans_id=%d", tostring(order.order_num), order.trans_id), 2)
+    order.trades[trade.trade_num] = true
+
+    local counters = order.counters
+
+    if order.operation == 'B' then
+        counters.money = counters.money - trade.value
+        counters.position = counters.position + trade.qty
+    else
+        counters.money = counters.money + trade.value
+        counters.position = counters.position - trade.qty
+    end
+    counters.money = counters.money - trade.exchange_comission - trade.tech_center_comission
+    counters.contracts = counters.contracts + trade.qty
+    order.balance = order.balance - trade.qty
+    if order.balance == 0 then
+        order.pending = false
+        order.active = false
+        allOrders[order.trans_id] = nil
+        --message(string.format("Order filled: order_num=%s, trans_id=%d", tostring(order.order_num), order.trans_id), 2)
     end
 end
 
 function q_order.onIdle()
-    local n = getNumberOf("orders")
-    local count = 0
-    for k,v in pairs(allOrders) do
-        count = count + 1
-    end
-    for i=1,n do
-        if count <= 0 then
-            break
+    for trans_id,order in pairs(allOrders) do
+        if order.active and order.balance == 0 then
+            order.pending = false
+            order.active = false
+            order.ttl = 0
         end
-        local index = n - i
-        local reply = getItem("orders", index)
-        local obj = reply.trans_id and allOrders[reply.trans_id]
-        if obj then
-            obj:onTransReply(reply)
-            count = count - 1
+        if order.active then
+            order:updateIndex()
+            if order.index then
+                local item = getItem("orders", order.index)
+                if bit.band(item.flags, 1) == 0 then
+                    order.active = false
+                    order.pending = false
+                end
+                if not order.active then
+                    --message(string.format("Order deactivated: order_num=%s, trans_id=%d", tostring(order.order_num), order.trans_id), 2)
+                    order.ttl = TIME_TO_LIVE
+                end
+            end
+        end
+        if not order.active then
+            order.pending = false
+            order.ttl = order.ttl - 1
+            if order.ttl <= 0 then
+                allOrders[trans_id] = nil
+                order.ttl = 0
+                --message(string.format("Order unlinked: order_num=%s, trans_id=%d", tostring(order.order_num), order.trans_id), 2)
+            end
         end
     end
 end
 
-function q_order.onDisconnected()
-    local pendingOrders = { }
-    for _, orderObj in pairs(allOrders) do
-        if orderObj:isPending() then
-            table.insert(pendingOrders, orderObj)
-        end
+function order:updateIndex()
+    if self.index or self.pending then
+        return
     end
-    for _, orderObj in ipairs(pendingOrders) do
-        orderObj:onDisconnected()
+
+    local n = getNumberOf("orders")
+    for i=1,n do
+        local index = n - i
+        local item = getItem("orders", index)
+        if self.order_num == item.order_num then
+            self.index = index
+            self.pending = false
+            --message(string.format("Index found: order_num=%s, trans_id=%d", tostring(self.order_num), self.trans_id), 2)
+            return
+        elseif self.order_num > item.order_num then
+            break
+        end
     end
 end
 
 function order.getNextTransId()
-    transId = transId or getLastTransId()
-    transId = transId + 1
-    return transId
+    return quik_ext.gettransid()
 end
 
 function order:isPending()
-    return ((self.id and true) or false) and not self:isActive()
+    return self.active and self.pending
 end
 
 function order:isActive()
-    return (self.key and true) or false
+    return self.active and not self.pending
+end
+
+function order:isDeactivating()
+    return not self.active and not self.pending and self.ttl > 0
 end
 
 function order:kill()
-    assert(self.class and self.asset and self.id and self.key, 
-        "order has not been sent\n" .. debug.traceback())
-    if not self:isActive() then
-        return true
-    end
+    assert(self.class and self.asset and self.trans_id and self.order_num and self:isActive() and not self:isPending(), 
+        "order has not been sent yet\n" .. debug.traceback())
     local now = os.time()
     local lastKill = self.lastKill or 0
     if now - lastKill < 5 then
@@ -151,7 +208,7 @@ function order:kill()
         CLASSCODE=self.class,
         SECCODE=self.asset,
         ACTION="KILL_ORDER",
-        ORDER_KEY=tostring(self.key),
+        ORDER_KEY=tostring(self.order_num),
     }
     local res = sendTransaction(trans)
     if res == "" then
@@ -163,19 +220,29 @@ end
 function order:send(operation, price, size)
     assert(not self:isActive(), "The order is active\n" .. debug.traceback())
     assert(not self:isPending(), "The order is pending\n" .. debug.traceback())
+    assert(not self:isDeactivating(), "The order is pending\n" .. debug.traceback())
+
+    if self.trans_id then
+        allOrders[self.trans_id] = nil
+    end
     
-    self.id = self.getNextTransId()
-    self.key = nil
+    self.trans_id = self.getNextTransId()
+    self.ttl = 0
+    self.order_num = nil
+    self.index = nil
+    self.pending = true
+    self.active = true
     self.lastKill = nil
     self.operation = operation
     self.balance = size
     self.price = price
     self.size = size
+    self.trades = {}
 
-    allOrders[self.id] = self
+    allOrders[self.trans_id] = self
 
     local transaction = {
-        TRANS_ID=tostring(self.id),
+        TRANS_ID=tostring(self.trans_id),
         ACCOUNT=self.account,
         CLASSCODE=self.class,
         SECCODE=self.asset,
@@ -191,19 +258,22 @@ function order:send(operation, price, size)
     if res == "" then
         return true, ""
     end
-    allOrders[self.id] = nil
-    self.id = nil
+    allOrders[self.trans_id] = nil
+    self.active = false
+    self.pending = false
     self.size = 0
     self.balance = 0
     return false, res
 end
 
 function order:onTransReply(reply)
-    if reply.trans_id == 0 then
+    if not reply.trans_id or reply.trans_id == 0 then
         return true, false, ""
     end
-    assert(reply.trans_id == self.id, "orders mismatch, expected " .. 
-        tostring(self.id) .. ", got " .. tostring(reply.trans_id))
+    assert(reply.trans_id == self.trans_id, "orders mismatch, expected " .. 
+        tostring(self.trans_id) .. ", got " .. tostring(reply.trans_id))
+    
+    self.pending = false
 
     local status = true
     local delay = false
@@ -216,36 +286,23 @@ function order:onTransReply(reply)
     if err then
         status = false
         err = string.format("Ошибка транзакции: %s, %s", err, tostring(reply.result_msg))
-    end
-  
-    if not self.key then
-        self.key = reply.order_num
-    end
-    
-    local inactive = (bit.band(reply.flags, 1) == 0) or err
-    if inactive then
-        allOrders[self.id] = nil
-        self.id = nil
-        self.key = false
-    end
-    
-    -- ignore reply.balance == 0 and not inactive
-    if (reply.balance ~= 0 or inactive) and reply.balance ~= self.balance then
-
-        local offset = self.balance - reply.balance
-        if err then
-            offset = 0
-        elseif bit.band(reply.flags, 4) ~= 0 then -- sell operation
-            offset = -offset
-        end
-        self.position = self.position + offset
-        self.balance = reply.balance
+        allOrders[self.trans_id] = nil
+        self.active = false
+        self.size = 0
+        self.balance = 0
+    else
+        self.order_num = reply.order_num 
+        err = ""
     end
     return status, delay, (err or "")
 end
 
-function order:onDisconnected()
-    allOrders[self.id] = nil
-    self.id = nil
-    self.key = false
+function order:onKillReply(reply)
+    local err = orderStatusError[reply.status]
+    if err then
+        return
+    end
+    self.active = false
+    self.pending = false
+    self.ttl = TIME_TO_LIVE 
 end

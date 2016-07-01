@@ -47,7 +47,7 @@ local q_averager =
         -- Вспомогательные параметры
         , maxDeviation = 1
         , profitSpread = 0.7
-        , spread = 5                  -- стоимость открытия позиции + стоимость закрытия позиции + маржа
+        , spread = 4                     -- стоимость открытия позиции + стоимость закрытия позиции + маржа
         , avgFactorDelay = 20            -- коэффициент осреднения задержек Quik
 
         
@@ -78,7 +78,7 @@ local q_averager =
         , schedule = 
             { q_time.interval("10:01", "12:55") -- 10:01 - 12:55
             , q_time.interval("13:05", "13:58") -- 13:01 - 13:55
-            , q_time.interval("14:05", "15:35") -- 14:16 - 15:35
+            , q_time.interval("14:05", "15:44") -- 14:16 - 15:45
             , q_time.interval("16:01", "18:50") -- 16:01 - 18:55
             , q_time.interval("19:01", "21:55") -- 19:01 - 21:55
             }
@@ -159,7 +159,7 @@ function q_averager.create(etc)
             , order = { }
             , take_profit = { } -- multiply orders
             , state = "--"
-            , count = -1000
+            , count = -100
             }
         }
 
@@ -234,13 +234,18 @@ function strategy:init()
 
     self.etc.limit = self:getLimit()
 
-    local balance = q_utils.getBalance(self.etc.account)
+    self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
+    self.state.position = q_utils.getPos(self.etc.asset)
+    
+    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
+    self.state.position = self.state.position + counters.position
+    counters.position = 0
+
+    local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
+    local balance = counters.money + self.state.position*settleprice
     self.state.balance.atStart = balance
     self.state.balance.maxValue = balance
     self.state.balance.currValue = balance
-
-    self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-    self.state.position = q_utils.getPos(self.etc.asset)
 
     self:updateParams()
 
@@ -269,15 +274,17 @@ function strategy:init()
 end
 
 function strategy:updatePosition()
+
     local state = self.state
-    local tp_balance = 0
-    local inactive = {}
+    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
+
+    state.position = state.position + counters.position
+    counters.position = 0
+
+    local tp_balance = 0 -- take profit balance
+    
     -- update position
     for i,order in ipairs(state.take_profit) do
-        if order.position ~= 0 then
-            state.position = state.position + order.position
-            order.position = 0
-        end
         if order:isActive() or order:isPending() then
             if order.operation == 'B' then
                 tp_balance = tp_balance + order.balance
@@ -286,9 +293,6 @@ function strategy:updatePosition()
             end
         end
     end
-
-    state.position = state.position + state.order.position
-    state.order.position = 0
 
     -- check state
     if state.cancel or state.pause or state.halt then
@@ -326,7 +330,7 @@ function strategy:updatePosition()
     if res then
         table.insert(state.take_profit, order)
     end
-    state.state = "Удержание позиции"
+    state.state = "Реализация позиции"
     self:checkStatus(res, err)
 end
 
@@ -372,6 +376,7 @@ end
 function strategy:onTrade(trade)
     self.now = os.time(trade.datetime)
     q_order.onTrade(trade)
+    self:updatePosition()
 end
 
 function strategy:onAllTrade(trade)
@@ -420,6 +425,16 @@ function strategy:onIdle(now)
 
     local state = self.state
     local ui_state = self.ui_state
+    
+    if state.order:isDeactivating() then
+        -- discard deactivating order
+        local order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
+        -- preserve refernce data
+        order.operation = state.order.operation
+        order.price = state.order.price
+        -- discard
+        state.order = order
+    end
 
     -- kill position
     if state.cancel then
@@ -462,14 +477,18 @@ function strategy:onIdle(now)
     ui_state.trend = state.market.avgTrend
 
     if self:checkSchedule() then
-        local balance = q_utils.getBalance(self.etc.account)
+        local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
+        local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
+        local balance = counters.money + state.position*settleprice
         state.balance.maxValue = math.max(state.balance.maxValue, balance)
         state.balance.currValue = balance
     end
 
-    ui_state.balance = string.format( "%.0f / %.0f"
+    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
+    ui_state.balance = string.format( "%.02f / %.02f (%d)"
                                     , state.balance.currValue - state.balance.atStart
                                     , state.balance.currValue - state.balance.maxValue
+                                    , counters.contracts
                                     )
 
     if pending then
@@ -506,15 +525,25 @@ end
 function strategy:getQuoteLevel2()
     local l2 = getQuoteLevel2(self.etc.class, self.etc.asset)
 
-    l2.bid_count = tonumber(l2.bid_count)
-    l2.offer_count = tonumber(l2.offer_count)
+    local function prepareQuotes(count, qq)
+        count = tonumber(count)
+        for i=1,count do
+            qq[i].price = tonumber(qq[i].price)
+            qq[i].quantity = tonumber(qq[i].quantity)
+        end
+        return count
+    end
+    l2.bid_count = prepareQuotes(l2.bid_count, l2.bid)
+    l2.offer_count = prepareQuotes(l2.offer_count, l2.offer)
 
     if l2.bid_count == 0 or l2.offer_count == 0 then
         return
     end
 
-    local bid = tonumber(l2.bid[l2.bid_count].price)
-    local offer = tonumber(l2.offer[1].price)
+    --q_order.removeOwnOrders(l2)
+
+    local bid = l2.bid[l2.bid_count].price
+    local offer = l2.offer[1].price
 
     return bid, offer
 end
@@ -679,6 +708,11 @@ function strategy:onMarketShift()
         -- lot cannot be bigger
         local lotSize = math.min(math.abs(diff), self:getLimit(2*etc.absPositionLimit, 2*self.etc.relPositionLimit))
         local res, err = true, ""
+        if state.order:isDeactivating() then
+            -- discard deactivating order
+            state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
+        end
+        state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
         if diff < 0 then
             state.state = (state.targetPos < 0) and "Открытие шорт" or "Закрытие лонг"
             local price = math.ceil(market.mid/etc.priceStepSize)*self.etc.priceStepSize
@@ -697,7 +731,6 @@ function strategy:onMarketShift()
 end
 
 function strategy:onDisconnected()
-    q_order.onDisconnected()
 end
 
 function strategy:checkStatus(status, err)

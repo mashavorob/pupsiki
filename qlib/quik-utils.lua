@@ -47,6 +47,10 @@ function q_utils.getPos(asset)
     return 0
 end
 
+function q_utils.getSettlePrice(class, asset)
+    return tonumber(getParamEx(class, asset, "SETTLEPRICE").param_value)
+end
+
 function q_utils.getStepPrice(class, asset)
     return tonumber(getParamEx(class, asset, "STEPPRICE").param_value)
 end

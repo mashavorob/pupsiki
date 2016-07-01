@@ -65,8 +65,16 @@ static int l_gettime(lua_State *L)
 
 #endif
 
-static const struct luaL_reg mylib [2] = 
-    { {"gettime", l_gettime}
+static int l_gettransid(lua_State *L)
+{
+    static volatile unsigned transId = 0;
+    lua_pushnumber(L, (lua_Number)(++transId));
+    return 1;
+}
+
+static const struct luaL_reg mylib [3] = 
+    { {"gettime", l_gettime }
+    , {"gettransid", l_gettransid }
     , {NULL, NULL}  /* sentinel */
     };
 
