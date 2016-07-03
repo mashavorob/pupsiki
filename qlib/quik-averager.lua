@@ -47,7 +47,7 @@ local q_averager =
         -- Вспомогательные параметры
         , maxDeviation = 1
         , profitSpread = 0.7
-        , minSpread = 5                  -- стоимость открытия позиции + стоимость закрытия позиции + маржа
+        , minSpread = 4                  -- стоимость открытия позиции + стоимость закрытия позиции + маржа
         , avgFactorDelay = 20            -- коэффициент осреднения задержек Quik
 
         
@@ -400,9 +400,11 @@ function strategy:onIdle(now)
     ui_state.spot = string.format("%.0f /%.0f", state.market.avgMid or 0, state.market.deviation)
     ui_state.trend = state.market.avgTrend
 
-    local balance = q_utils.getBalance(self.etc.account)
-    state.balance.maxValue = math.max(state.balance.maxValue, balance)
-    state.balance.currValue = balance
+    if self:checkSchedule() then
+        local balance = q_utils.getBalance(self.etc.account)
+        state.balance.maxValue = math.max(state.balance.maxValue, balance)
+        state.balance.currValue = balance
+    end
 
     ui_state.balance = string.format( "%.0f / %.0f"
                                     , state.balance.currValue - state.balance.atStart
@@ -571,8 +573,8 @@ function strategy:onMarketShift()
                 state.phase = PHASE_CANCEL
                 state.state = "Отмена ордера из-за отклонения цены" 
             end
-        elseif (diff > 0 and state.order.operation == 's') or (diff < 0 and state.order.operation == 'B') then
-            local res, err = state.order:kill()
+        elseif (diff > 0 and state.order.operation == 'S') or (diff < 0 and state.order.operation == 'B') then
+            res, err = state.order:kill()
             state.phase = PHASE_CANCEL
             state.state = "Отмена ордера из-за изменения тренда" 
         end
@@ -599,15 +601,17 @@ function strategy:onMarketShift()
         self:checkStatus(res, err)
     elseif state.position > 0 then
         -- try to sell with profit
-        local price = math.ceil((market.mid + market.deviation*etc.profitSpread)/etc.priceStepSize)*self.etc.priceStepSize
-        price = math.max(price, market.offer)
+        -- local price = math.ceil((market.mid + market.deviation*etc.profitSpread)/etc.priceStepSize)*self.etc.priceStepSize
+        local price = state.order.price + etc.minSpread
+        price = math.max(price, market.offer - etc.priceStepSize)
         local res, err = state.order:send('S', price, state.position)
         state.state = "Удержание позиции"
         self:checkStatus(res, err)
     elseif state.position < 0 then
         -- try to buy with profit
-        local price = math.floor((market.mid - market.deviation*etc.profitSpread)/etc.priceStepSize)*self.etc.priceStepSize
-        price = math.min(price, market.bid)
+        --local price = math.floor((market.mid - market.deviation*etc.profitSpread)/etc.priceStepSize)*self.etc.priceStepSize
+        local price = state.order.price - etc.minSpread
+        price = math.min(price, market.bid + etc.priceStepSize)
         local res, err = state.order:send('B', price, -state.position)
         state.state = "Удержание позиции"
         self:checkStatus(res, err)
