@@ -158,6 +158,39 @@ function q_order.onIdle()
     end
 end
 
+function q_order.removeOwnOrders(l2)
+
+    local removeOrder = function(order, count, qq)
+        for i=1,count do
+            local q = qq[i]
+            if q.price > order.price then
+                break
+            elseif q.price == order.price then
+                if q.quantity > order.balance then
+                    q.quantity = q.quantity - order.balance
+                else
+                    table.remove(qq, i)
+                    count = count - 1
+                end
+                break
+            end
+        end
+        return count
+    end
+
+    for _,order in pairs(allOrders) do
+        if order:isActive() then
+            local qq, count
+            if order.operation == 'B' then
+                l2.bid_count = removeOrder(order, l2.bid_count, l2.bid)
+            else
+                l2.offer_count = removeOrder(order, l2.offer_count, l2.offer)
+            end
+        end
+    end
+
+end
+
 function order:updateIndex()
     if self.index or self.pending then
         return
