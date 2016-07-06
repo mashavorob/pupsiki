@@ -57,7 +57,8 @@ function q_order.getCounters(account, class, asset)
     local assetCounters = classCounters[asset]
     if not assetCounters then
         assetCounters = 
-            { money = 0
+            { margin = 0
+            , comission = 0
             , contracts = 0
             , position = 0
             }
@@ -108,13 +109,13 @@ function q_order.onTrade(trade)
     local counters = order.counters
 
     if order.operation == 'B' then
-        counters.money = counters.money - trade.value
+        counters.margin = counters.margin - trade.value
         counters.position = counters.position + trade.qty
     else
-        counters.money = counters.money + trade.value
+        counters.margin = counters.margin + trade.value
         counters.position = counters.position - trade.qty
     end
-    counters.money = counters.money - trade.exchange_comission - trade.tech_center_comission
+    counters.comission = counters.comission + trade.exchange_comission + trade.tech_center_comission
     counters.contracts = counters.contracts + trade.qty
     order.balance = order.balance - trade.qty
     if order.balance == 0 then

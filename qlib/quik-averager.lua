@@ -33,8 +33,8 @@ local q_averager =
         , dealCost = 2                   -- биржевой сбор
 
         -- Параметры задаваемые вручную
-        , commission = 0.5               -- коммисия
-        , absPositionLimit = 2           -- максимальная приемлемая позиция (абсолютное ограничение)
+        , brokerComission = 0.5          -- коммисия брокера
+        , absPositionLimit = 4           -- максимальная приемлемая позиция (абсолютное ограничение)
         , relPositionLimit = 0.6         -- максимальная приемлемая позиция по отношению к размеру счета
 
         , maxLoss = 1000                 -- максимальная приемлимая потеря
@@ -46,9 +46,8 @@ local q_averager =
         , exitThreshold  = 0             -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
-        , maxDeviation = 1
-        , maxVolumeAheadAtEnter = 20
-        , profitSpread = 0.7
+        , maxVolumeAheadAtEnter = 15
+        , maxLevelsAheadAtEnter = 3
         , spread = 5                     -- стоимость открытия позиции + стоимость закрытия позиции + маржа
         , avgFactorDelay = 20            -- коэффициент осреднения задержек Quik
 
@@ -89,10 +88,12 @@ local q_averager =
         , ui_mapping =
             { { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=12, format="%.0f" }
             , { name="targetPos", title="Рас.позиция", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" }
-            , { name="spot", title="Средняя цена", ctype=QTABLE_STRING_TYPE, width=17, format="%s" }
-            , { name="trend", title="Средний тренд", ctype=QTABLE_DOUBLE_TYPE, width=17, format="%.5f" }
-            , { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=20, format="%s" }
-            , { name="lotsCount", title="Всего контрактов", ctype=QTABLE_DOUBLE_TYPE, width=20, format="%.0f" }
+            , { name="spot", title="Цена", ctype=QTABLE_STRING_TYPE, width=12, format="%s" }
+            , { name="trend", title="Тренд", ctype=QTABLE_DOUBLE_TYPE, width=12, format="%.5f" }
+            , { name="margin", title="Маржа", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.02f" }
+            , { name="comission", title="Коммисия", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.02f" }
+            , { name="lotsCount", title="Контракты", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" }
+            , { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=25, format="%s" }
             , { name="ordersLatencies", title="Задер.заявок (ms)", ctype=QTABLE_STRING_TYPE, width=20, format="%s" }
             , { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=40, format="%s" }
             , { name="lastError", title="Результат последней операции", ctype=QTABLE_STRING_TYPE, width=45, format="%s" }
@@ -124,8 +125,10 @@ function q_averager.create(etc)
             , targetPos = 0
             , spot = "--"
             , trend = "--"
+            , margin = 0
+            , comission = 0
+            , lotsCount = 0
             , balance = "-- / --"
-            , dataLatencies = "-- / --"
             , ordersLatencies = "-- / --"
             , state = "--"
             , lastError = "--" 
@@ -229,10 +232,17 @@ function strategy:updateParams()
     assert(self.etc.priceStepValue > 0, "priceStepValue(" .. self.etc.asset .. ") = " .. self.etc.priceStepValue)
 end
 
+function strategy:calcMargin()
+    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
+    local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
+    return counters.margin + self.state.position*settleprice
+end
+
 function strategy:calcBalance()
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
-    return counters.money + self.state.position*settleprice - counters.contracts*self.etc.commission
+    local pos = self.state.position + counters.position
+    return counters.margin - counters.comission + pos*settleprice - counters.contracts*self.etc.brokerComission
 end
 
 function strategy:init()
@@ -282,6 +292,7 @@ end
 
 function strategy.getBidsBefore(l2, price)
     local vol = 0
+    local count = 0
     for j=0,l2.bid_count - 1 do
         local i = l2.bid_count - j
         local q = l2.bid[i]
@@ -289,20 +300,23 @@ function strategy.getBidsBefore(l2, price)
             break
         end
         vol = vol + q.quantity
+        count = count + 1
     end
-    return vol
+    return vol, count
 end
 
 function strategy.getOffersBefore(l2, price)
     local vol = 0
+    local count = 0
     for i=1,l2.offer_count do
         local q = l2.offer[i]
         if q.price >= price then
             break
         end
         vol = vol + q.quantity
+        count = count + 1
     end
-    return vol
+    return vol, count
 end
 
 function strategy.getVolumeBeforeOrder(l2, order)
@@ -514,18 +528,20 @@ function strategy:onIdle(now)
     ui_state.spot = string.format("%.0f /%.0f", state.market.avgMid or 0, state.market.deviation)
     ui_state.trend = state.market.avgTrend
 
-    if self:checkSchedule() then
+    if self:checkSchedule() and isConnected() ~= 0 then
         local balance = self:calcBalance()
         state.balance.maxValue = math.max(state.balance.maxValue, balance)
         state.balance.currValue = balance
     end
 
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
+    ui_state.margin = self:calcMargin()
+    ui_state.comission = counters.comission
+    ui_state.lotsCount = counters.contracts
     ui_state.balance = string.format( "%.02f / %.02f"
                                     , state.balance.currValue - state.balance.atStart
                                     , state.balance.currValue - state.balance.maxValue
                                     )
-    ui_state.lotsCount = counters.contracts
 
     if pending then
         ui_state.state = "Отправка заявки"
@@ -724,9 +740,10 @@ function strategy:onMarketShift()
         state.state = "Ожидание исполнения ордера"
         local res, err = true, ""
         if diff > 0 and state.order.operation == 'B' then
-            -- check deviation
+            -- check deviation (volume before own order, and count of populated price levels)
+            local vol, count = strategy.getBidsBefore(market.l2, state.order.price)
             if state.order.price < buyPrice and
-                strategy.getBidsBefore(market.l2, state.order.price) > etc.maxVolumeAheadAtEnter 
+                (vol > etc.maxVolumeAheadAtEnter or count > etc.maxLevelsAheadAtEnter)
             then
                 -- price went too far, cancel the orders
                 res, err = self:killOrders()
@@ -736,8 +753,10 @@ function strategy:onMarketShift()
             end
         elseif diff < 0 and state.order.operation == 'S' then
             -- check deviation
+            -- check deviation (volume before own order, and count of populated price levels)
+            local vol, count = strategy.getOffersBefore(market.l2, state.order.price)
             if state.order.price > sellPrice and
-                strategy.getOffersBefore(market.l2, state.order.price) >= etc.maxVolumeAheadAtEnter
+                (vol > etc.maxVolumeAheadAtEnter or count > etc.maxLevelsAheadAtEnter)
             then
                 -- price went too far, cancel the orders
                 res, err = self:killOrders()
