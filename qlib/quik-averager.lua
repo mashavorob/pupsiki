@@ -40,8 +40,8 @@ local q_averager =
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot  = 50            -- коэффициент осреднения спот
-        , avgFactorTrend = 50            -- коэфициент осреднения тренда
+        , avgFactorSpot  = 40            -- коэффициент осреднения спот
+        , avgFactorTrend = 40            -- коэфициент осреднения тренда
         , enterThreshold = 1e-7          -- порог чувствительности для входа в позицию
         , exitThreshold  = 0             -- порог чувствительности для выхода из позиции
 
@@ -235,14 +235,13 @@ end
 function strategy:calcMargin()
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
-    return counters.margin + self.state.position*settleprice
+    return counters.margin + counters.position*settleprice
 end
 
 function strategy:calcBalance()
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
-    local pos = self.state.position + counters.position
-    return counters.margin - counters.comission + pos*settleprice - counters.contracts*self.etc.brokerComission
+    return counters.margin - counters.comission + counters.position*settleprice - counters.contracts*self.etc.brokerComission
 end
 
 function strategy:init()
@@ -253,11 +252,12 @@ function strategy:init()
     self.etc.limit = self:getLimit()
 
     self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-    self.state.position = q_utils.getPos(self.etc.asset)
-    
+
+    -- initial counters and position
+    local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    self.state.position = self.state.position + counters.position
-    counters.position = 0
+    counters.position = q_utils.getPos(self.etc.asset)
+    counters.margin = -counters.position*settleprice
 
     local balance = self:calcBalance()
     self.state.balance.atStart = balance
@@ -331,9 +331,6 @@ function strategy:updatePosition()
     local state = self.state
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
 
-    state.position = state.position + counters.position
-    counters.position = 0
-
     local tp_balance = 0 -- take profit balance
     
     -- update position
@@ -353,12 +350,12 @@ function strategy:updatePosition()
     end
 
     -- position is being changed, there is no need to create take-profit orders
-    if state.position*state.targetPos <= 0 then
+    if counters.position*state.targetPos <= 0 then
         return
     end
 
     -- create take profit orders to neitralize bought/sold orders
-    local diff = state.position + tp_balance
+    local diff = counters.position + tp_balance
     if diff == 0 then
         return
     end
@@ -477,6 +474,7 @@ function strategy:onIdle(now)
 
     local state = self.state
     local ui_state = self.ui_state
+    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     
     if state.order:isDeactivating() then
         -- discard deactivating order
@@ -502,18 +500,18 @@ function strategy:onIdle(now)
         if not active and not pending then
             if not self:checkSchedule() then
                 state.state = "Остановка по расписанию"
-            elseif state.position > 0 then
+            elseif counters.position > 0 then
                 self.etc.minPrice = tonumber(getParamEx(self.etc.class, self.etc.asset, "PRICEMIN").param_value)
                 assert(self.etc.minPrice > 0, "Неверная минимальная цена: " .. self.etc.minPrice .. "\n" .. debug.traceback())
                 state.phase = PHASE_CANCEL
-                local res, err = state.order:send("S", self.etc.minPrice, self.state.position)
+                local res, err = state.order:send("S", self.etc.minPrice, counters.position)
                 self:checkStatus(res, err)
                 return
-            elseif state.position < 0 then
+            elseif counters.position < 0 then
                 self.etc.maxPrice = tonumber(getParamEx(self.etc.class, self.etc.asset, "PRICEMAX").param_value)
                 assert(self.etc.maxPrice > 0, "Неверная максимальная цена: " .. self.etc.maxPrice .. "\n" .. debug.traceback())
                 state.phase = PHASE_CANCEL
-                local res, err = state.order:send("B", self.etc.maxPrice, -self.state.position)
+                local res, err = state.order:send("B", self.etc.maxPrice, -counters.position)
                 self:checkStatus(res, err)
                 return
             else
@@ -523,7 +521,7 @@ function strategy:onIdle(now)
         end
     end
 
-    ui_state.position = state.position
+    ui_state.position = counters.position
     ui_state.targetPos = state.targetPos
     ui_state.spot = string.format("%.0f /%.0f", state.market.avgMid or 0, state.market.deviation)
     ui_state.trend = state.market.avgTrend
@@ -729,7 +727,8 @@ function strategy:onMarketShift()
         return
     end
 
-    local diff = state.targetPos - state.position
+    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
+    local diff = state.targetPos - counters.position
     local sellPrice = math.ceil(market.mid/etc.priceStepSize)*self.etc.priceStepSize
     sellPrice = math.max(sellPrice, market.offer - self.etc.priceStepSize)
     local buyPrice = math.floor(market.mid/etc.priceStepSize)*self.etc.priceStepSize
