@@ -16,9 +16,10 @@ local etc =
     , firmid  =  "==SPBFUT589000"
     , sname   = "quik-averager"
 
-    , asset   = 'SiU6'
+    , asset   = 'RIU6'
     , class   = "SPBFUT"
-    , spread  = 2   -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
+
+    , spread  = 1   -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
     }
 
 quik_ext = nil

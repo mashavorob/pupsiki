@@ -109,10 +109,10 @@ function q_order.onTrade(trade)
     local counters = order.counters
 
     if order.operation == 'B' then
-        counters.margin = counters.margin - trade.value
+        counters.margin = counters.margin - trade.qty*trade.price
         counters.position = counters.position + trade.qty
     else
-        counters.margin = counters.margin + trade.value
+        counters.margin = counters.margin + trade.qty*trade.price
         counters.position = counters.position - trade.qty
     end
     counters.comission = counters.comission + trade.exchange_comission + trade.tech_center_comission
@@ -206,7 +206,7 @@ function order:updateIndex()
             self.pending = false
             --message(string.format("Index found: order_num=%s, trans_id=%d", tostring(self.order_num), self.trans_id), 2)
             return
-        elseif self.order_num > item.order_num then
+        elseif self.order_num and self.order_num > item.order_num then
             break
         end
     end

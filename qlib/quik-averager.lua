@@ -33,7 +33,7 @@ local q_averager =
         , dealCost = 2                   -- биржевой сбор
 
         -- ѕараметры задаваемые вручную
-        , brokerComission = 0.5          -- коммиси€ брокера
+        , brokerComission = 0.4          -- коммиси€ брокера
         , absPositionLimit = 1           -- максимальна€ приемлема€ позици€ (абсолютное ограничение)
         , relPositionLimit = 0.6         -- максимальна€ приемлема€ позици€ по отношению к размеру счета
 
@@ -49,7 +49,14 @@ local q_averager =
         -- ¬спомогательные параметры
         , maxVolumeAheadAtEnter = 15
         , maxLevelsAheadAtEnter = 3
-        , spread = 5                     -- стоимость открыти€ позиции + стоимость закрыти€ позиции + маржа
+
+        , spread = 2                     -- ¬нимание: спред беретьс€ из соотвествующего файла:
+                                         --     * pupsik-averager-si.lua,
+                                         --     * pupsik-averager-ri.lua,
+                                         --     * и так далее
+                                         -- расчет: стоимость открыти€ позиции + стоимость закрыти€ позиции + маржа
+
+
         , avgFactorDelay = 20            -- коэффициент осреднени€ задержек Quik
 
         
@@ -368,10 +375,12 @@ function strategy:updatePosition()
 
     if diff > 0 then
         -- try to sell with profit
-        price = math.max(state.order.price + etc.spread, market.offer - etc.priceStepSize)
+        --price = math.max(state.order.price + etc.spread*etc.priceStepSize, market.offer - etc.priceStepSize)
+        price = state.order.price + etc.spread*etc.priceStepSize
     else
         -- try to buy with profit
-        price = math.min(state.order.price - etc.spread, market.bid + etc.priceStepSize)
+        --price = math.min(state.order.price - etc.spread*etc.priceStepSize, market.bid + etc.priceStepSize)
+        price = state.order.price - etc.spread*etc.priceStepSize
     end
     
     local res, err = order:send((diff > 0) and 'S' or 'B', price, math.abs(diff))
