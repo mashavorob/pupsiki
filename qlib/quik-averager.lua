@@ -44,6 +44,7 @@ local q_averager =
         , avgFactorTrend = 30            -- коэфициент осреднени€ тренда
         , enterThreshold = 1e-7          -- порог чувствительности дл€ входа в позицию
         , exitThreshold  = 0             -- порог чувствительности дл€ выхода из позиции
+        , settlePriceWeight = 0.3        -- вес расчетной цены
 
         -- ¬спомогательные параметры
         , maxVolumeAheadAtEnter = 15
@@ -600,7 +601,10 @@ function strategy:calcMarketParams(bid, offer, l2)
     market.bid = bid
     market.offer = offer
     market.l2 = l2
+    local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
     local mid = (bid + offer)/2
+
+    mid = etc.settlePriceWeight*settleprice + (1 - etc.settlePriceWeight)*mid
     
     local k1 = 1/(1 + etc.avgFactorSpot)
     local k2 = 1/(1 + etc.avgFactorTrend)
