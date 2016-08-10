@@ -109,10 +109,10 @@ function q_order.onTrade(trade)
     local counters = order.counters
 
     if order.operation == 'B' then
-        counters.margin = counters.margin - trade.qty*trade.price
+        counters.margin = counters.margin - trade.value
         counters.position = counters.position + trade.qty
     else
-        counters.margin = counters.margin + trade.qty*trade.price
+        counters.margin = counters.margin + trade.value
         counters.position = counters.position - trade.qty
     end
     counters.comission = counters.comission + trade.exchange_comission + trade.tech_center_comission

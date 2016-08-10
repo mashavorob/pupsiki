@@ -35,7 +35,7 @@ local q_averager =
         -- Параметры задаваемые вручную
         , brokerComission = 0.4          -- коммисия брокера
         , absPositionLimit = 1           -- максимальная приемлемая позиция (абсолютное ограничение)
-        , relPositionLimit = 0.6         -- максимальная приемлемая позиция по отношению к размеру счета
+        , relPositionLimit = 1           -- максимальная приемлемая позиция по отношению к размеру счета
 
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
@@ -44,7 +44,6 @@ local q_averager =
         , avgFactorTrend = 30            -- коэфициент осреднения тренда
         , enterThreshold = 1e-7          -- порог чувствительности для входа в позицию
         , exitThreshold  = 0             -- порог чувствительности для выхода из позиции
-        , settlePriceWeight = 0.3        -- вес расчетной цены
 
         -- Вспомогательные параметры
         , maxVolumeAheadAtEnter = 15
@@ -96,8 +95,8 @@ local q_averager =
         , ui_mapping =
             { { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=12, format="%.0f" }
             , { name="targetPos", title="Рас.позиция", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" }
-            , { name="spot", title="Цена", ctype=QTABLE_STRING_TYPE, width=12, format="%s" }
-            , { name="trend", title="Тренд", ctype=QTABLE_DOUBLE_TYPE, width=12, format="%.5f" }
+            , { name="spot", title="Цена", ctype=QTABLE_STRING_TYPE, width=22, format="%s" }
+            , { name="trend", title="Тренд", ctype=QTABLE_STRING_TYPE, width=15, format="%s" }
             , { name="margin", title="Маржа", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.02f" }
             , { name="comission", title="Коммисия", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.02f" }
             , { name="lotsCount", title="Контракты", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" }
@@ -216,13 +215,17 @@ end
 function strategy:getLimit(absLimit, relLimit)
     
     absLimit = absLimit or self.etc.absPositionLimit
-    relLimit = relLimit or self.etc.relPositionLimit
+    relLimit = math.min(1, relLimit or self.etc.relPositionLimit)
+
 
     assert(absLimit)
     assert(relLimit)
-    local val = q_utils.getMoneyLimit(self.etc.account)
-    assert(val)
-    local moneyLimit = q_utils.getMoneyLimit(self.etc.account)*relLimit
+    local moneyLimit = q_utils.getMoneyLimit(self.etc.account)
+    assert(moneyLimit)
+    -- Hack!!!!!
+    --moneyLimit = 20000
+    -- End of Hack!!!!!
+    moneyLimit = moneyLimit*relLimit
     local buyLimit = math.floor(moneyLimit/q_utils.getBuyDepo(self.etc.class, self.etc.asset))
     local sellLimit = math.floor(moneyLimit/q_utils.getBuyDepo(self.etc.class, self.etc.asset))
     return math.min(absLimit, math.min(buyLimit, sellLimit))
@@ -243,13 +246,15 @@ end
 function strategy:calcMargin()
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
-    return counters.margin + counters.position*settleprice
+    return counters.margin + counters.position*settleprice/self.etc.priceStepSize*self.etc.priceStepValue
 end
 
 function strategy:calcBalance()
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
-    return counters.margin - counters.comission + counters.position*settleprice - counters.contracts*self.etc.brokerComission
+    local balance = counters.margin - counters.comission - counters.contracts*self.etc.brokerComission
+    balance = balance + counters.position*settleprice/self.etc.priceStepSize*self.etc.priceStepValue 
+    return balance
 end
 
 function strategy:init()
@@ -375,12 +380,12 @@ function strategy:updatePosition()
 
     if diff > 0 then
         -- try to sell with profit
-        --price = math.max(state.order.price + etc.spread*etc.priceStepSize, market.offer - etc.priceStepSize)
-        price = state.order.price + etc.spread*etc.priceStepSize
+        price = math.max(state.order.price + etc.spread*etc.priceStepSize, market.offer - etc.priceStepSize)
+        --price = state.order.price + etc.spread*etc.priceStepSize
     else
         -- try to buy with profit
-        --price = math.min(state.order.price - etc.spread*etc.priceStepSize, market.bid + etc.priceStepSize)
-        price = state.order.price - etc.spread*etc.priceStepSize
+        price = math.min(state.order.price - etc.spread*etc.priceStepSize, market.bid + etc.priceStepSize)
+        --price = state.order.price - etc.spread*etc.priceStepSize
     end
     
     local res, err = order:send((diff > 0) and 'S' or 'B', price, math.abs(diff))
@@ -533,8 +538,48 @@ function strategy:onIdle(now)
 
     ui_state.position = counters.position
     ui_state.targetPos = state.targetPos
-    ui_state.spot = string.format("%.0f /%.0f", state.market.avgMid or 0, state.market.deviation)
-    ui_state.trend = state.market.avgTrend
+    local format = "%.0f /%s"
+    if self.etc.priceStepSize < 1e-6 then
+        format = "%0.8f /%s"
+    elseif self.etc.priceStepSize < 1e-5 then
+        format = "%0.7f /%s"
+    elseif self.etc.priceStepSize < 1e-4 then
+        format = "%0.6f /%s"
+    elseif self.etc.priceStepSize < 1e-3 then
+        format = "%0.5f /%s"
+    elseif self.etc.priceStepSize < 1e-2 then
+        format = "%0.4f /%s"
+    elseif self.etc.priceStepSize < 1e-1 then
+        format = "%0.3f /%s"
+    elseif self.etc.priceStepSize < 1 then
+        format = "%0.2f / %s"
+    end
+
+    local function formatVal(val)
+        val = val or 0
+        if val == 0 then
+            return "0"
+        end
+        local aval = math.abs(val)
+        local fmt = "%.f"
+        if aval < 1e-3 then
+            fmt = "%.2e"
+        elseif aval < 1e-2 then
+            fmt = "%.4f"
+        elseif aval < 1e-1 then
+            fmt = "%.3f"
+        elseif aval < 1 then
+            fmt = "%.2f"
+        elseif aval < 1e2 then
+            fmt = "%.1f"
+        end
+        return string.format(fmt, val)
+    end
+
+    local trend = state.market.avgTrend or 0
+
+    ui_state.spot = string.format(format, (state.market.avgMid or 0), formatVal(state.market.deviation))
+    ui_state.trend = formatVal(state.market.avgTrend)
 
     if self:checkSchedule() and isConnected() ~= 0 then
         local balance = self:calcBalance()
@@ -610,11 +655,8 @@ function strategy:calcMarketParams(bid, offer, l2)
     market.bid = bid
     market.offer = offer
     market.l2 = l2
-    local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
     local mid = (bid + offer)/2
 
-    mid = etc.settlePriceWeight*settleprice + (1 - etc.settlePriceWeight)*mid
-    
     local k1 = 1/(1 + etc.avgFactorSpot)
     local k2 = 1/(1 + etc.avgFactorTrend)
 

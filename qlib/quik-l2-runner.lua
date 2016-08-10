@@ -139,14 +139,18 @@ end
 function q_runner:onAllTrade(trade)
     enrichRecord(trade)
     self.strategy:onAllTrade(trade)
-    self.logs.allTradesLog.write(trade)
+    if self.logs.allTradesLog then
+        self.logs.allTradesLog.write(trade)
+    end
     self:logStatus()
 end
 
 function q_runner:onTransReply(reply)
     enrichRecord(reply)
     self.strategy:onTransReply(reply)
-    self.logs.replyLog.write(reply)
+    if self.logs.replyLog then
+        self.logs.replyLog.write(reply)
+    end
     self:logStatus()
 end
 
@@ -158,7 +162,9 @@ function q_runner:onTrade(trade)
         trade["event-tstamp"] = self.tstamp
         trade.delay = os.time(trade.datetime) + trade.datetime.ms/1000 - self.tstamp
     end
-    self.logs.tradesLog.write(trade)
+    if self.logs.tradesLog then
+        self.logs.tradesLog.write(trade)
+    end
 end
 
 function q_runner:onQuote(class, asset)

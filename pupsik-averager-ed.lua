@@ -16,9 +16,8 @@ local etc =
     , firmid  =  "==SPBFUT589000"
     , sname   = "quik-averager"
 
-    , asset   = 'RIU6'
+    , asset   = 'EDU6'
     , class   = "SPBFUT"
-
     , spread  = 3   -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
     }
 
