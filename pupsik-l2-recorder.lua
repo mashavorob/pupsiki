@@ -26,8 +26,12 @@ l2r = {
         state = "Запись",
     },
     assets = {
-        { class='SPBFUT', asset='RIU6' },
         { class='SPBFUT', asset='SiU6' },
+        { class='SPBFUT', asset='EuU6' },
+        { class='CETS', asset='EUR_RUB__TOD' },
+        { class='CETS', asset='EUR_RUB__TOM' },
+        { class='CETS', asset='USD000000TOD' },
+        { class='CETS', asset='USD000UTSTOM' },
     },
     quik_ext = nil,
 }
