@@ -12,11 +12,11 @@
 ]]
 
 
-q_persist = {}
-
 local q_l2_data = assert(require("qlib/quik-jit-l2-data"))
 
-local function preProcessBookSide(count, side)
+local q_persist = {}
+
+function q_persist.preProcessBookSide(count, side)
     count = math.max(0, math.min(20, tonumber(count)))
     if count == 0 then
         return count
@@ -29,12 +29,12 @@ local function preProcessBookSide(count, side)
     return count, quotes
 end
 
-local function preProcessL2(l2)
+function q_persist.preProcessL2(l2)
     if not l2 then
         return
     end
-    local bid_count, bid = preProcessBookSide(l2.bid_count, l2.bid)
-    local offer_count, offer = preProcessBookSide(l2.offer_count, l2.offer)
+    local bid_count, bid = q_persist.preProcessBookSide(l2.bid_count, l2.bid)
+    local offer_count, offer = q_persist.preProcessBookSide(l2.offer_count, l2.offer)
     return
         { bid_count = bid_count
         , bid = bid
@@ -43,19 +43,38 @@ local function preProcessL2(l2)
         }
 end
 
+function q_persist.parseLine(line)
+    local fn, message = loadstring("return {" .. line .. "}")
+    assert(fn, message)
+    local status, rec = pcall(fn)
+    assert(status)
+    rec = rec[1]
+    rec.l2 = q_persist.preProcessL2(rec.l2)
+    return rec
+end
+
 function q_persist.loadL2Log(fname, data)
     local file = fname and assert(io.open(fname,"r")) or io.stdin
     data = data or q_l2_data.create()
     for line in file:lines() do
-        local text = "return {" .. line .. "}"
-        local fn, message = loadstring(text)
-        assert(fn, message)
-        local status, rec = pcall(fn)
-        assert(status)
-        rec = rec[1]
-        rec.l2 = preProcessL2(rec.l2)
+        local rec = q_persist.parseLine(line)
         data:add(rec)
     end
     assert(data.data:size() > 0)
     return data
 end
+
+function q_persist.toString(val)
+    if type(val) == "table" then
+        local s = "{ "
+        for k,v in pairs(val) do
+            s = string.format('%s [%s] = %s,', s, q_persist.toString(k), q_persist.toString(v))
+        end
+        return s .. " }"
+    elseif type(val) == "string" then
+        return '"' .. val .. '"'
+    end
+    return tostring(val)
+end
+
+return q_persist

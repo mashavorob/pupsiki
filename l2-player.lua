@@ -35,7 +35,7 @@ Where
 
 assert(require("qlib/quik-jit"))
 assert(require("qlib/quik-simulator"))
-assert(require("qlib/quik-l2-persist"))
+q_persist = assert(require("qlib/quik-l2-persist"))
 
 print("")
 print("Level 2 Market Data Player (c) 2016")
