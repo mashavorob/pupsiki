@@ -56,9 +56,9 @@
 
 ]]
 
-qtable = {}
+local qtable = {}
 
-require("qlib/quik-fname")
+local q_fname = require("qlib/quik-fname")
 
 function qtable.create(posfile, title, cols)
 
@@ -171,3 +171,5 @@ function qtable.create(posfile, title, cols)
 
     return t;
 end
+
+return qtable

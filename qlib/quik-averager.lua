@@ -11,10 +11,10 @@
 # or enable modeline in your .vimrc
 ]]
 
-assert(require("qlib/quik-etc"))
-assert(require("qlib/quik-avg"))
-assert(require("qlib/quik-order"))
-assert(require("qlib/quik-utils"))
+local q_config = require("qlib/quik-etc")
+local q_order = require("qlib/quik-order")
+local q_utils = require("qlib/quik-utils")
+local q_avg = require("qlib/quik-avg")
 assert(require("qlib/quik-time"))
 
 local q_averager = 
@@ -125,7 +125,7 @@ function q_averager.create(etc)
 
     local self = 
         { title = "averager"
-        , etc = config.create(q_averager.etc)
+        , etc = q_config.create(q_averager.etc)
         , ui_mapping = q_averager.ui_mapping
         , ui_state =
             { position = 0
@@ -869,3 +869,4 @@ function strategy:killPosition()
     self.state.cancel = true
 end
 
+return q_averager

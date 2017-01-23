@@ -19,7 +19,7 @@ Best parameters are:
 
 ]]
 
-config = {}
+local config = {}
 
 local keywords = { folder=true, title=true, params=true, class=true, asset=true }
 local types = { string=true, number=true }
@@ -233,3 +233,5 @@ function config.getTestSuite()
     end
     return testSuite
 end
+
+return config

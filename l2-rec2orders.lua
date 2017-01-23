@@ -267,7 +267,6 @@ local function processLine(window)
 
     local ev = window[1]
     table.remove(window, 1)
-    print( q_persist.toString(ev) )
 
     local tt = getTrades(ev)
 
@@ -292,6 +291,7 @@ local function processLine(window)
             onTrade(ev)
         end
     end
+    print( q_persist.toString(ev) )
 end
 
 local window = {}

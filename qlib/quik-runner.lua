@@ -13,11 +13,11 @@
 
 runner = {}
 
-require("qlib/quik-etc")
+local q_config = require("qlib/quik-etc")
+local q_log = require("qlib/quik-logger")
+local q_table = require("qlib/quik-table")
 
 function runner.create(strategy, etc)
-    require("qlib/quik-logger")
-    require("qlib/quik-table")
 
     local extra_ui_mapping = { 
         {name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=10, format="%.0f" },
@@ -65,7 +65,7 @@ function runner.create(strategy, etc)
         tradingEnabled = true,
         manualHalt = false,
         ui_mapping = ui_mapping,
-        qtable = qtable.create(strategy.title .. ".wpos", strategy.title, ui_mapping),
+        qtable = q_table.create(strategy.title .. ".wpos", strategy.title, ui_mapping),
         state = {
             state = "--",
             position = "--",
@@ -112,7 +112,7 @@ function runner.create(strategy, etc)
             fname = os.date(fname)
             if not self.logs[log] or fname ~= self.logs[log].getFileName() then
                 local oldLog = self.logs[log]
-                self.logs[log] = csvlog.create(fname, logColumns[log])
+                self.logs[log] = q_log.create(fname, logColumns[log])
                 if oldLog then
                     oldLog.close()
                 end

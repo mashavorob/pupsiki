@@ -11,31 +11,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-local client =
-    { id = 0
-    , cbs =
-        { onAllTrade = function() end
-        , onTransReply = function() end
-        , onQuote = function() end
-        , onTrade = function() end
-        }
-    , tables = 
-        {}
-    }
-
-local function findOrCreate(coll, ...)
-    local newItem = false
-    for _, key in ipairs({...}) do
-        local t = coll[key]
-        if t == nil then
-            t = {}
-            coll[key] = t
-            newItem = true
-        end
-        coll = t
-    end
-    return coll, newItem
-end
+local client = {}
 
 function client:fireOnAllTrade(trade)
     self.cbs.onAllTrade(trade)
@@ -53,8 +29,16 @@ function client:fireOnTrade(trade)
     self.cbs.onTrade(trade)
 end
 
-function client:getTable(table)
-    return findOrCreate(self.tables, table)
+function client:fireOnTestOrder(order)
+    self.cbs.onTestOrder(order)
+end
+
+function client:getTable(tableName)
+    local t = self.tables[tableName]
+    if not t then
+        t = self.book.getTable(tableName)
+    end
+    return t
 end
 
 function client:getOrders()
@@ -77,21 +61,22 @@ function client:getFuturesHoldings(class, asset)
         , varmargin = 0
         , positionvalue = 0
         , totalnet = 0
+        , cashflow = 0
         }
     table.insert(fh, row)
     return row
 end
 
 function client:getFuturesLimits()
-    local fl, newTable = self:getTable("futures_client_limits")
-    if newTable then
+    local fl = self:getTable("futures_client_limits")
+    if #fl == 0 then
         local row = 
             { firmid = self.firmid
             , trdaccid = self.account
             , limit_type = 0
-            , cbplimit = 0      -- Лимит откр. позиций/Текущий лимит
-            , cbplused = 0      -- Заблокировано под исполнение заявок
-            , cbplplanned = 0   -- cbplimit - cbplused
+            , cbplimit = self.money.limit       -- Лимит откр. позиций/Текущий лимит
+            , cbplused = 0                      -- Заблокировано под исполнение заявок
+            , cbplplanned = self.money.limit    -- cbplimit - cbplused
             , varmargin = 0
             , accruedint = 0
             }
@@ -103,65 +88,152 @@ end
 function client:onQuoteChange(order, params, size)
     -- change reserve and limits
     local buydepo = params.BUYDEPO and tonumber(params.BUYDEPO.param_value)
-    local selldepo = params.SELLDEPO and tonumber(params.SELLDEPO.param_value)
-    assert(buydepo, string.format("BUYDEPO parameter is not defined for '%s':'%s'", q_order.CLASSCODE, q_order.SECCODE))
-    assert(selldepo, string.format("SELLDEPO parameter is not defined for '%s':'%s'", q_order.CLASSCODE, q_order.SECCODE))
-    
-    local limits = self:getFuturesLinits()
+    local selldepo = params.SELDEPO and tonumber(params.SELDEPO.param_value)
+    assert(buydepo, string.format("BUYDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
+    assert(selldepo, string.format("SELDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
+
+    local limits = self:getFuturesLimits()
+
+    print("-----")
+    print("Before:")
+    print(string.format("      buydepo: %s", tostring(buydepo)))
+    print(string.format("     selldepo: %s", tostring(selldepo)))
+    print(string.format("    operation: %s", order.OPERATION))
+    print(string.format("         size: %s", tostring(size)))
+    print(string.format("       locked: %s", tostring(limits.cbplused)))
+    print(string.format("      planned: %s", tostring(limits.cbplplanned)))
+    print(string.format("    available: %s", tostring(limits.cbplimit)))
+    print("-----")
+
     local diff = size*(order.OPERATION == 'B' and buydepo or selldepo)
     if limits.cbplused + diff > limits.cbplimit then
         return false
     end
     limits.cbplused = limits.cbplused + diff
     limits.cbplplanned = limits.cbplimit - limits.cbplused
+    print("After:")
+    print(string.format("       locked: %s", tostring(limits.cbplused)))
+    print(string.format("      planned: %s", tostring(limits.cbplplanned)))
+    print(string.format("    available: %s", tostring(limits.cbplimit)))
+    print("-----")
+    print("")
+
     return true
 end
 
 -- when order filled (might be partially)
 function client:onOrderFilled(order, price, diff)
+
     assert(order.OPERATION == 'B' and diff > 0 or order.OPERATION == 'S' and diff < 0,
         string.format("Unexpected sign of position change, operation='%s', change='%f'", order.OPERATION, diff))
     
+    local holdings = self:getFuturesHoldings(order.CLASSCODE, order.SECCODE)
+    local limits = self:getFuturesLimits()
+    local params = self.book:getParams(order.CLASSCODE, order.SECCODE)
+    
+    local buydepo = params.BUYDEPO and tonumber(params.BUYDEPO.param_value)
+    local selldepo = params.SELDEPO and tonumber(params.SELDEPO.param_value)
+    local exchpay = params.EXCH_PAY and tonumber(params.EXCH_PAY.param_value)
+    assert(buydepo, string.format("BUYDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
+    assert(selldepo, string.format("SELDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
+
+    local closeAmount = 0
+    local openAmount = 0
+
+    if diff*holdings.totalnet < 0 then
+        closeAmount = math.min(math.abs(holdings.totalnet), math.abs(diff))
+        openAmount = math.abs(diff) - closeAmount
+    else
+        closeAmount = 0
+        openAmount = math.abs(diff)
+    end
+
+    local moneyToRelease = closeAmount*(holdings.totalnet > 0 and buydepo or selldepo)
+    local moneyToReserve = openAmount*(diff > 0 and buydepo or selldepo)
+    local moneyToPay = openAmount*exchpay
     -- sold means reduced position(negative diff) and positive income
     -- bought means increased position(positive diff) and negative income (reduced balance)
-    local income = -price*diff
-
-    local limits = self:getFuturesLimits()
-    limits.cbplimit = limits.cbplimit + income
+    local cashflow = -price*diff - moneyToPay
+    
+    -- update reserves and positions
+    limits.cbplused = limits.cbplused - moneyToRelease + moneyToReserve
     limits.cbplplanned = limits.cbplimit - limits.cbplused
 
-    local holdings = self:getFuturesHoldings(order.CLASSCODE, order.SECCODE)
     holdings.totalnet = holdings.totalnet + diff
+    holdings.price = price
+    holdings.cashflow = holdings.cashflow + cashflow
+    holdings.positionvalue = holdings.totalnet*holdings.price
+    holdings.varmargin = holdings.cashflow + holdings.positionvalue
+
+    print(string.format(" Money reserved: %d (%d)", limits.cbplused, moneyToReserve, moneyToRelease))
+    print(string.format("Money available: %d", limits.cbplplanned))
+    print(string.format("       Position: %d", holdings.totalnet))
+    print(string.format(" Position value: %d", holdings.positionvalue))
+    print(string.format("           Paid: %d", holdings.cashflow))
+    print(string.format("         Margin: %d", holdings.varmargin))
 end
 
-local q_client = {
+function client:getBalance()
+
+    local ft = self:getFuturesLimits()
+    assert(ft)
+    local balance = self:getFuturesLimits().cbplimit
+
+    local fh = self:getTable("futures_client_holding")
+    
+    for _, row in ipairs(fh) do
+        balance = balance + row.varmargin
+    end
+    return balance
+end
+
+local factory = {
     }
 
 local next_id = 0
 
-function q_client.create(account, firmid)
+function factory.create(book, strategy, limit)
+
+    limit = limit or 30000
+
+    strategy = strategy or 
+        { etc = { account = "<UNLIM>", firmid = "<UNLIM>" }
+        , onAllTrade = function() end
+        , onTransReply = function() end
+        , onQuote = function() end
+        , onTrade = function() end
+        }
+        
     next_id = next_id + 1
+
     local self =
         { id = next_id
-        , account = account
-        , firmid = firmid
+        , book = book
+        , account = strategy.etc.account
+        , firmid = strategy.etc.firmid
         , money =
-            { limit = 0
-            , position = 0
-            , reserve = 0
+            { limit = limit
             }
         , cbs =
-            { onAllTrade = function() end
-            , onTransReply = function() end
-            , onQuote = function() end
-            , onTrade = function() end
+            { onAllTrade = function(trade) strategy:onAllTrade(trade) end
+            , onTransReply = function(reply) strategy:onTransReply(reply) end
+            , onQuote = function(class, asset) strategy:onQuote(class, asset) end
+            , onTrade = function(trade) strategy:onTrade(trade) end
+            , onTestOrder = strategy["onTestOrder"] and function(order) strategy:onTestOrder(order) end or function() end
             }
         , tables = 
-            {}
+            { futures_client_holding = {}
+            , futures_client_limits = {}
+            , orders = {}
+            }
         }
+
     setmetatable(self, { __index = client })
+    setmetatable(self.tables, { __index = book.tables })
+
+    book:addClient(self)
     
     return self
 end
 
-return q_client
+return factory

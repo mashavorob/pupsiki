@@ -12,7 +12,7 @@
 ]]
 
 
-local q_l2_data = assert(require("qlib/quik-jit-l2-data"))
+local q_l2_data = require("qlib/quik-jit-l2-data")
 
 local q_persist = {}
 
@@ -44,6 +44,7 @@ function q_persist.preProcessL2(l2)
 end
 
 function q_persist.parseLine(line)
+    --print("parsing: ", line)
     local fn, message = loadstring("return {" .. line .. "}")
     assert(fn, message)
     local status, rec = pcall(fn)

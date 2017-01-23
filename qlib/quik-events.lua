@@ -11,7 +11,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-q_events = {} 
+local q_events = {} 
 
 function q_events.create()
     local self = 
@@ -34,17 +34,17 @@ function q_events:flushEvents(tables)
     self.events = {}
 
     for _,ev in ipairs(events) do
-        if ev.name == "OnQuote" then
+        if ev.name == "onQuote" then
             self.strategy:onQuote(ev.data.class, ev.data.asset)
-        elseif ev.name == "OnAllTrade" then
+        elseif ev.name == "onAllTrade" then
             table.insert(tables.all_trades, ev.data)
             if #tables.all_trades > 5000 then
                 table.remove(tables.all_trades, 1)
             end
             self.strategy:onAllTrade(ev.data)
-        elseif ev.name == "OnTransReply" then
+        elseif ev.name == "onTransReply" then
             self.strategy:onTransReply(ev.data)
-        elseif ev.name == "OnTrade" then
+        elseif ev.name == "onTrade" then
             self.strategy:onTrade(ev.data)
         else
             print("Unknown event type: ", ev.name)
@@ -88,4 +88,4 @@ function q_events:printState()
     io.stderr:write(ln .. "\n")
 end
 
-
+return q_events

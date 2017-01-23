@@ -13,18 +13,8 @@
 
 local q_client = require("qlib/quik-book-client")
 
-local book =
-    { params =
-        { classes = {}
-        , }
-    , tables = {}
-    , clients = {}
-    , orders = {}
-    , books =
-        { bid = {}
-        , offer = {} 
-        }
-    }
+local book = {}
+local clients = {} 
 
 function book.findOrCreate(coll, ...)
     for _, key in ipairs({...}) do
@@ -38,24 +28,27 @@ function book.findOrCreate(coll, ...)
     return coll
 end
 
+function book:addClient(client)
+    table.insert(clients, client)
+end
+
 function book:getParams(class, asset)
     return book.findOrCreate(self.params, class, asset)
 end
 
 function book:getTable(tableName)
-    return self.findOrCreate(self.tables, tableName)
-end
-
-function book:getOrders(class, asset)
-    return self.findOrCreate(self.orders, class, asset)
+    return book.findOrCreate(self.tables, tableName)
 end
 
 function book:getBook(class, asset)
-    return self.findOrCreate(self.books, class, asset)
+    local b = book.findOrCreate(self.books, class, asset)
+    b.bid = b.bid or {}
+    b.offer = b.offer or {}
+    return b
 end
 
 function book.findPriceLevel(bookSide, price)
-    local l, r = 1, #bookSide
+    local l, r = 1, #bookSide + 1
     while l < r do
         local m = math.floor((l + r)/2)
         if bookSide[m].price < price then
@@ -70,9 +63,9 @@ function book.findPriceLevel(bookSide, price)
 end
 
 function book:onParams(class, asset, params)
-    local params = self:getParams(class, asset)
-    for n,v in params do
-        params[n] = v
+    local paramsTable = self:getParams(class, asset)
+    for n,v in pairs(params) do
+        paramsTable[n] = v
     end
 end
 
@@ -105,38 +98,49 @@ local mask =
     }
 
 function book:onCorrectOrder(client, order)
-    local q_order = self.orders[order.TRANS_ID]
+    local q_order = false
+    for _,o in ipairs(self.orders) do
+        if o.client == client and o.TRANS_ID == order.TRANS_ID then
+            q_order = o
+            break
+        end
+    end
     assert(q_order)
     assert(q_order.PRICE == order.PRICE or not order.PRICE)
-    assert(q_order.client.id == client.id)
     local b = self:getBook(order.CLASSCODE, order.SECCODE)
     local bookSide = q_order.OPERATION == 'B' and b.bid or b.offer
     local index = self.findPriceLevel(bookSide, q_order.price)
     assert(bookSide[index] and bookSide[index].price == q_order.price)
     local qty = tonumber(order.QUANTITY)
-    if qty <= q_order.balance then
-        qty = q_order.balance
+    local diff = qty - q_order.quantity
+    -- limit amount reduction by order balance
+    if (q_order.balance + diff) < 0 then
+        diff = -q_order.balance
+        qty = q_order.quantity + diff
     end
-    local diff = q_order.quantity - qty
-    local params = getParams(q_order.CLASSCODE, q_order.SECCODE)
+
+    local params = self:getParams(q_order.CLASSCODE, q_order.SECCODE)
     if not q_order.client:onQuoteChange(q_order, params, diff) then
-        q_order.client:fireTransReply( { trans_id = order.trans_id
-                                       , status = 6 
-                                       , result_msg = "Not enough money"
-                                       , flags = q_order.flags
-                                       , balance = order.balance
-                                       }
-                                     )
+        q_order.client:fireOnTransReply( { trans_id = q_order.trans_id
+                                         , status = 6 
+                                         , result_msg = "Not enough money"
+                                         , flags = q_order.flags
+                                         , balance = order.balance
+                                         }
+                                       )
         return
     end
-    q_order.balance = q_order.balance - diff
-    bookSide[index].quantity = bookSide[index].quantity - diff
+    q_order.balance = q_order.balance + diff
+    q_order.quantity = q_order.quantity + diff
+    q_order.QUANTITY = tostring(q_order.quantity)
+
+    bookSide[index].quantity = bookSide[index].quantity + diff
     if q_order.balance == 0 then
         q_order.flags = bit.band(q_order.flags, bit.bnot(mask.flags.ACTIVE))
         q_order.status = 3
         local found = false
         for i,o in ipairs(bookSide[index].orders) do
-            if o.TRANS_ID == order.TRANS_ID then
+            if o == q_order then
                 table.remove(bookSide[index].orders, i)
                 found = true
                 break
@@ -151,13 +155,13 @@ function book:onCorrectOrder(client, order)
     else
         assert(bookSide[index].quantity > 0)
     end
-    q_order.client:fireTransReply( { trans_id = q_order.trans_id
-                                   , status = q_order.status
-                                   , result_msg=""
-                                   , flags = q_order.flags
-                                   , balance = order.balance
-                                   }
-                                 )
+    q_order.client:fireOnTransReply( { trans_id = q_order.trans_id
+                                     , status = q_order.status
+                                     , result_msg=""
+                                     , flags = q_order.flags
+                                     , balance = order.balance
+                                     }
+                                   )
 end
 
 local trade_num = 1
@@ -171,38 +175,37 @@ function book:onNewOrder(client, order)
 
     self.order_num = self.order_num and self.order_num + 1 or 1
     q_order.client = client
-    q_order.price = tonumber(q_order.price)
+    q_order.price = tonumber(q_order.PRICE)
     q_order.order_num = self.order_num
     q_order.trans_id = tonumber(q_order.TRANS_ID)
     q_order.classcode = q_order.CLASSCODE
     q_order.seccode = q_order.SECCODE
-    q_order.qunatity = tonumber(q_order.QUANTITY)
-    q_order.balance = q_order.qunatity
-    q_order.client = client
+    q_order.quantity = tonumber(q_order.QUANTITY)
+    q_order.balance = q_order.quantity
     q_order.status = 0
 
     -- validate order, check limits
-    local params = getParams(q_order.CLASSCODE, q_order.SECCODE)
-    assert(mask.conditions[q_order.EXECUTE_CONDITION], string.format("Unknown execute condition '%s'", q_order.EXECUTE_CONDITION))
+    local params = self:getParams(q_order.CLASSCODE, q_order.SECCODE)
+    assert(mask.condition[q_order.EXECUTE_CONDITION], string.format("Unknown execute condition '%s'", q_order.EXECUTE_CONDITION))
     assert(mask.operation[q_order.OPERATION], string.format("Unknown operation '%s'", q_order.OPERATION))
-    q_order.flags = bit.bor( mask.flags.ORDER_LIMITED
+    q_order.flags = bit.bor( mask.flags.LIMITED
                            , mask.flags.ACTIVE
-                           , mask.operations[q_order.OPERATION]
+                           , mask.operation[q_order.OPERATION]
                            , mask.flags.LIMITED
-                           , mask.conditions[q_order.EXECUTE_CONDITION]
+                           , mask.condition[q_order.EXECUTE_CONDITION]
                            )
     q_order.status = 1
 
     if not q_order.client:onQuoteChange(q_order, params, q_order.quantity) then
         q_order.flags = bit.band(q_order.flags, bit.bnot(mask.flags.ACTIVE))
         q_order.status = 6
-        q_order.client:fireTransReply( { trans_id = q_order.trans_id
-                                       , status = 6
-                                       , result_msg = "Not enough money"
-                                       , flags = 0
-                                       , balance = 0
-                                       }
-                                     )
+        q_order.client:fireOnTransReply( { trans_id = q_order.trans_id
+                                         , status = 6
+                                         , result_msg = "Not enough money"
+                                         , flags = 0
+                                         , balance = 0
+                                         }
+                                       )
         return
     end
     -- put order to table
@@ -211,37 +214,58 @@ function book:onNewOrder(client, order)
 
     -- process a new order
     local b = self:getBook(q_order.CLASSCODE, q_order.SECCODE)
+
+    for i,q in ipairs(b.bid) do
+        print(string.format("b.bid[%d] = { %d@%d }", i, q.quantity, q.price))
+    end
+    for i,q in ipairs(b.offer) do
+        print(string.format("b.offer[%d] = { %d@%d }", i, q.quantity, q.price))
+    end
+
     local bookSide = nil
     if q_order.OPERATION == 'B' then
         bookSide = b.bid
-        local amount = 0
-        for i = 1,#b.offer do
-            if b.offer[i].price > q_order.price then
-                break
+        if "KILL_OR_FILL" == q_order.EXECUTE_CONDITION then
+            local amount = 0
+            for i = 1,#b.offer do
+                if b.offer[i].price > q_order.price then
+                    break
+                end
+                amount = amount + b.offer[i].quantity
             end
-            amount = amount + b.offer[i].quantity
-        end
-        if "KILL_OR_FILL" == q_order.EXECUTE_CONDITION and q_order.quantity > amount then
-            -- deactivate and return
-            q_order.client:onQuoteChange(q_order, params, -q_order.quantity)
-            q_order.status = 3
-            q_order.flags = bit.band(q_order.flags, bit.bnot(mask.flags.ACTIVE))
-            q_order.client:fireOnTransReply( { trans_id = q_order.trans_id
-                                             , status = q_order.status
-                                             , result_msg=""
-                                             , flags = q_order.flags
-                                             , balance = q_order.balance
-                                             }
-                                           )
-            return
+            if q_order.quantity > amount then
+                -- deactivate and return
+                q_order.client:onQuoteChange(q_order, params, -q_order.quantity)
+                q_order.status = 3
+                q_order.flags = bit.band(q_order.flags, bit.bnot(mask.flags.ACTIVE))
+                q_order.client:fireOnTransReply( { trans_id = q_order.trans_id
+                                                 , status = q_order.status
+                                                 , result_msg = ""
+                                                 , flags = q_order.flags
+                                                 , balance = q_order.balance
+                                                 }
+                                               )
+                return
+            end
         end
         -- uncross orders
-        while q_order.balance > 0 and #b.offer > 0 and b.offer[1].price <= q_order.price do
+        assert( q_order.balance )
+        while q_order.balance > 0 and #b.offer > 0 do
+            if b.offer[1].price > q_order.price then
+                break
+            end
+            
+            print("Crossing order:")
+            print(string.format("   operation: buy"))
+            print(string.format("       price: %s", tostring(b.offer[1].price)))
+            print(string.format("        size: %s", tostring(math.min(b.offer[1].quantity, q_order.balance))))
+            print(string.format("  to execute: %s", tostring(q_order.balance)))
+            print(string.format("   available: %s of ", tostring(b.offer[1].orders[1].balance), tostring(b.offer[1].quantity)))
             trade_num = trade_num + 1
             local q = b.offer[1]
             local crossOrder = q.orders[1]
             local size = math.min(q_order.balance, crossOrder.balance)
-            q.quantity = q.qantity - size
+            q.quantity = q.quantity - size
             -- update cross order
             crossOrder.balance = crossOrder.balance - size
             if crossOrder.balance == 0 then
@@ -273,7 +297,7 @@ function book:onNewOrder(client, order)
                                          )
             crossOrder.client:fireOnTransReply( { trans_id = crossOrder.trans_id
                                                 , status = crossOrder.status
-                                                , result_msg=""
+                                                , result_msg = ""
                                                 , flags = crossOrder.flags
                                                 , balance = order.balance
                                                 }
@@ -309,35 +333,47 @@ function book:onNewOrder(client, order)
         end
     elseif q_order.OPERATION == 'S' then
         bookSide = b.offer
-        local amount = 0
-        for i = 1,#b.bid do
-            local index= #b.bid - i + 1
-            if b.bid[index].price < q_order.price then
-                break
+        if "KILL_OR_FILL" == q_order.EXECUTE_CONDITION then
+            local amount = 0
+            for i = 1,#b.bid do
+                local index = #b.bid - i + 1
+
+                if b.bid[index].price < q_order.price then
+                    break
+                end
+                amount = amount + b.bid[index].quantity
             end
-            amount = amount + b.bid[index].quantity
-        end
-        if "KILL_OR_FILL" == q_order.EXECUTE_CONDITION and q_order.quantity > amount then
-            -- deactivate and return
-            q_order.client:onQuoteChange(q_order, params, -q_order.quantity)
-            q_order.status = 3
-            q_order.flags = bit.band(q_order.flags, bit.bnot(mask.flags.ACTIVE))
-            q_order.client:fireOnTransReply( { trans_id = q_order.trans_id
-                                             , status = q_order.status
-                                             , result_msg=""
-                                             , flags = q_order.flags
-                                             , balance = q_order.balance
-                                             }
-                                           )
-            return
+            if q_order.quantity > amount then
+                -- deactivate and return
+                q_order.client:onQuoteChange(q_order, params, -q_order.quantity)
+                q_order.status = 3
+                q_order.flags = bit.band(q_order.flags, bit.bnot(mask.flags.ACTIVE))
+                q_order.client:fireOnTransReply( { trans_id = q_order.trans_id
+                                                 , status = q_order.status
+                                                 , result_msg = ""
+                                                 , flags = q_order.flags
+                                                 , balance = q_order.balance
+                                                 }
+                                               )
+                return
+            end
         end
         -- uncross orders
-        while q_order.balance > 0 and #b.bid > 0 and b.bid[#b.bid].price >= q_order.price do
+        while q_order.balance > 0 and #b.bid > 0 do
+            if b.bid[#b.bid].price < q_order.price then
+                break
+            end
+            print("Crossing order:")
+            print(string.format("   operation: sell"))
+            print(string.format("        bids: %s (%s)", tostring(#b.bid), tostring(b.bid_count)))
+            print(string.format("       price: %s", tostring(b.bid[#b.bid].price)))
+            print(string.format("  to execute: %s", tostring(q_order.balance)))
+            print(string.format("   available: %s of %s", tostring(b.bid[#b.bid].orders[1].balance), tostring(b.bid[#b.bid].quantity)))
             trade_num = trade_num + 1
             local q = b.bid[#b.bid]
             local crossOrder = q.orders[1]
             local size = math.min(q_order.balance, crossOrder.balance)
-            q.quantity = q.qantity - size
+            q.quantity = q.quantity - size
             -- update cross order
             crossOrder.balance = crossOrder.balance - size
             if crossOrder.balance == 0 then
@@ -420,14 +456,18 @@ function book:onNewOrder(client, order)
                                        )
         return
     end
-    local index = self.findPriceLevel(bookSide, q_order.price)
-    if not bookSide[index] or bookSide[index].price ~= q_order.price then
-        table.insert(bookSide, index, { price = q_order.price, quantity = 0, orders = {} })
+    if q_order.balance > 0 then
+        local index = self.findPriceLevel(bookSide, q_order.price)
+        assert(not bookSide[index] or bookSide[index].price <= q_order.price)
+        if not bookSide[index] or bookSide[index].price ~= q_order.price then
+            table.insert(bookSide, index, { price = q_order.price, quantity = 0, orders = {} })
+        end
+        bookSide[index].quantity = bookSide[index].quantity + q_order.quantity
+        table.insert(bookSide[index].orders, q_order)
+        table.insert(self.orders, q_order)
+        table.insert(self.orders, q_order.TRANS_ID)
     end
-    bookSide[index].quantity = bookSide[index].quantity + q_order.qunatity
-    table.insert(bookSide.orders, q_order)
-    self.orders[q_order.TRANS_ID] = q_order
-    if q_order.balance == q_order.qunatity then
+    if q_order.balance == q_order.quantity then
         -- the order has not been reported yet
         q_order.client:fireOnTransReply( { trans_id = q_order.trans_id
                                          , status = q_order.status
@@ -449,20 +489,55 @@ function book:onOrder(client, order)
     end
 end
 
-function book:fireEvent(client, ev)
+function book:broadcastEvent(ev)
+    print(string.format("book:broadcastEvent(): '%s'", ev.event))
+    for k,v in pairs(ev) do
+        print(string.format("ev.%s = %s", k, tostring(v)))
+    end
+    print(string.format("Number of clients: %d", #clients))
+    for _,c in ipairs(clients) do
+        if ev.event == "onQuote" then
+            print("fire onQuote()")
+            c:fireOnQuote(ev.class, ev.asset)
+        elseif ev.event == "onTestOrder" then
+            print("fire onTestOrder()")
+            c:fireOnTestOrder(ev.order)
+        elseif ev.event == "onAllTrade" then
+            c:fireOnAllTrade(ev.trade)
+        else
+            assert(false, string.format("Error: unknown event type: %s", ev.event))
+        end
+    end
 end
 
 function book:onEvent(client, ev)
-    if ev.event == "OnParams" then
+    if ev.event == "onParams" then
         self:onParams(ev.class, ev.asset, ev.params)
-    elseif ev.event == "OnLoggedTrade" then
+    elseif ev.event == "onLoggedTrade" then
         self:onLoggedTrade(ev.trade)
     elseif ev.event == "onOrder" then
         self:onOrder(client, ev.order)
     else
-        self:fireEvent(client, ev)
+        self:broadcastEvent(ev)
     end
-    
 end
 
-return q_book
+local factory = {}
+
+function factory.create()
+    local self =
+        { params =
+            { classes = {}
+            , }
+        , tables = {}
+        , orders = {}
+        , books =
+            { bid = {}
+            , offer = {} 
+            }
+        }
+    setmetatable(self, { __index = book })
+    return self
+end
+
+return factory

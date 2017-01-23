@@ -18,12 +18,16 @@ local etc =
 
     , asset   = 'EuU6'
     , class   = "SPBFUT"
+
     , spread  = 4   -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
     }
 
-quik_ext = nil
+local scriptFolder = false
 
-scriptFolder = nil
+local quik_ext = false
+local q_fname = false
+local q_utils = false
+local q_runner = false
 
 function OnInit(scriptPath)
 
@@ -54,17 +58,16 @@ function OnInit(scriptPath)
     package.cpath = package.cpath .. ";.\\lib?.dll;?.dll;" .. folder .. "lib?.dll;" .. folder .. "?.dll"
     quik_ext = require("quik_ext")
 
-    assert(require("qlib/quik-fname"))
-    assert(require("qlib/quik-utils"))
+    q_fname = require("qlib/quik-fname")
     q_fname.root = folder
+    q_utils = require("qlib/quik-utils")
+    q_runner = require("qlib/quik-l2-runner")
 
-    assert(require("qlib/quik-l2-runner"))
-    assert(require("qlib/" .. etc.sname))
+    local factory = require("qlib/" .. etc.sname)
 
     etc.account = q_utils.getAccount() or etc.account
     etc.firmid = q_utils.getFirmID() or etc.firmid
 
-    local factory = assert(_G[etc.sname])
     local strategy = assert(factory.create(etc))
 
     strategyRunner = assert(q_runner.create(strategy, etc))

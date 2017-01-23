@@ -11,7 +11,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-q_avg = { }
+local q_avg = { }
 
 local avg = {}
 
@@ -111,3 +111,5 @@ end
 function avgEx:getTrendDeviation()
     return self:getDeviation(1)
 end
+
+return q_avg

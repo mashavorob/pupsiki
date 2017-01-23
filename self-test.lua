@@ -12,9 +12,9 @@
 # or enable modeline in your .vimrc
 ]]
 
-assert(require("qlib/quik-jit"))
-assert(require("qlib/quik-logger"))
-assert(require("qlib/quik-etc"))
+local q_jit = require("qlib/quik-jit")
+local q_config = require("qlib/quik-etc")
+local q_log = require("qlib/quik-logger")
 assert(require("qlib/quik-avd"))
 assert(require("qlib/quik-book"))
 local q_container = assert(require("qlib/quik-jit-l2-data"))
@@ -31,8 +31,8 @@ print("")
 
 
 local unitTests = {
-    csvlog = csvlog.getTestSuite(),
-    config = config.getTestSuite(),
+    csvlog = q_log.getTestSuite(),
+    config = q_config.getTestSuite(),
     avd = avd.getTestSuite(),
     book = q_book.getTestSuite(),
     q_container = q_container.getTestSuite(), 

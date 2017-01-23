@@ -15,7 +15,7 @@ LUA_PATH = "./?.lua"
 
 os.setlocale("C")
 
-require("qlib/quik-logger")
+q_log = require("qlib/quik-logger")
 
 numericMin = 2.22507e-308
 numericMax = 1.79769e+308
@@ -105,7 +105,7 @@ end
 local function loadAllLogs(logs)
     local trades = {}
     for _, lname in ipairs(logs) do
-        local reader = csvlog.createReader(lname)
+        local reader = q_log.createReader(lname)
         for trade in reader.allLines() do
             trade = decodeTrade(trade)
             table.insert(trades, trade)

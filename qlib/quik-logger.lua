@@ -11,7 +11,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-csvlog = {}
+local csvlog = {}
 
 --[[
     Creates CSV logger
@@ -31,7 +31,7 @@ csvlog = {}
         }
 ]]
 
-require("qlib/quik-fname")
+local q_fname = require("qlib/quik-fname")
 
 function csvlog.create(fname, columns)
     fname = q_fname.normalize(os.date(fname))
@@ -319,3 +319,5 @@ function csvlog.getTestSuite()
     end
    return testSuite
 end
+
+return csvlog

@@ -11,6 +11,12 @@
 # or enable modeline in your .vimrc
 ]]
 
+local q_config = false
+local q_fname = false
+local q_order = false
+local q_utils = false
+local q_runner = false
+
 local etc = {
     asset = "RIH6",
     class = "SPBFUT",
@@ -67,16 +73,15 @@ function OnInit(scriptPath)
     end
     LUA_PATH = LUA_PATH .. ".\\?.lua;" .. folder .. "?.lua"
 
-    assert(require("qlib/quik-fname"))
+    q_fname = require("qlib/quik-fname")
     q_fname.root = folder
 
-    assert(require("qlib/quik-etc"))
-    assert(require("qlib/quik-order"))
-    assert(require("qlib/quik-table"))
-    assert(require("qlib/quik-l2-runner"))
-    assert(require("qlib/quik-utils"))
+    q_config = require("qlib/quik-etc")
+    q_order = require("qlib/quik-order")
+    q_utils = require("qlib/quik-utils")
+    q_runner = require("qlib/quik-l2-runner")
 
-    strategy.etc = config.create(etc)
+    strategy.etc = q_config.create(etc)
     strategy.order = q_order.create(etc.account, etc.class, etc.asset)
     strategyRunner = assert(q_runner.create(strategy, etc))
     strategy.minPrice = tonumber(getParamEx(etc.class, etc.asset, "PRICEMIN").param_value)

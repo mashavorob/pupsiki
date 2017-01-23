@@ -11,7 +11,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-q_fname = { root = false }
+local q_fname = { root = false }
 
 function q_fname.normalize(fname)
     local unixRoot = string.find(fname, '/', 1, true)
@@ -27,4 +27,6 @@ function q_fname.normalize(fname)
     end
     return fname
 end
+
+return q_fname
 

@@ -12,10 +12,10 @@
 ]]
 
 recorder = {}
+local q_log = require("qlib/quik-logger")
+local q_table = require("qlib/quik-table")
 
 function recorder.create()
-    require("qlib/quik-logger")
-    require("qlib/quik-table")
 
     local self = {
         etc = {
@@ -35,7 +35,7 @@ function recorder.create()
         qtable = false,
     }
 
-    self.qtable = qtable.create("conf/quik-recorder.wpos", "Рекордер", self.ui_mapping)
+    self.qtable = q_table.create("conf/quik-recorder.wpos", "Рекордер", self.ui_mapping)
     self.qtable.addRow(self.state)
 
     local function dateTimeAsStr(unixTime, ms)
@@ -62,7 +62,7 @@ function recorder.create()
             fname = os.date(fname)
             if not self.logs[log] or fname ~= self.logs[log].getFileName() then
                 local oldLog = self.logs[log]
-                self.logs[log] = csvlog.create(fname, logColumns[log])
+                self.logs[log] = q_log.create(fname, logColumns[log])
                 if oldLog then
                     oldLog.close()
                 end

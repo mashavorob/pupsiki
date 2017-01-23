@@ -11,7 +11,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-q_order = 
+local q_order = 
     { counters = {}
     } 
 
@@ -340,3 +340,5 @@ function order:onKillReply(reply)
     self.pending = false
     self.ttl = TIME_TO_LIVE 
 end
+
+return q_order

@@ -15,7 +15,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-q_persist = assert(require("qlib/quik-l2-persist"))
+local q_persist = require("qlib/quik-l2-persist")
 
 local data = q_persist.loadL2Log()
 

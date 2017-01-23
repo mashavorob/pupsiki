@@ -124,7 +124,7 @@ function ffi_pool.create(ffi)
     setmetatable(self, {__index = ffi_pool})
 
     self:appendChunk()
-    self.onLoggedTrade = self:getIndexFromString("OnLoggedTrade")
+    self.onLoggedTrade = self:getIndexFromString("onLoggedTrade")
     self.onTrade = self:getIndexFromString("onTrade")
     self.onQuote = self:getIndexFromString("onQuote")
 
@@ -275,7 +275,7 @@ function ffi_pool:appendRecord()
 end
 
 function ffi_pool:append(item)
-    if item.event == "OnLoggedTrade" then
+    if item.event == "onLoggedTrade" then
         local record = self:appendRecord()
         record.itemType = self.onLoggedTrade
         self:storeTrade(item.trade, record.u.trade)
@@ -405,11 +405,11 @@ function container.getTestSuite()
 end
 
 function container:add(item)
-    if item.event == "OnParams" then
+    if item.event == "onParams" then
         if not self.preambleLocked then
             table.insert(self.params, item)
         end
-    elseif item.event == "OnLoggedTrade" then
+    elseif item.event == "onLoggedTrade" then
         if not self.preambleLocked then
             self.preamble:append(item)
         end
@@ -461,7 +461,7 @@ end
 local paramSiM6 = 
     { asset = "SiM6"
     , class = "SPBFUT"
-    , event = "OnParams"
+    , event = "onParams"
     , params = 
         { STEPPRICE = 
             { param_type = "1"
@@ -504,7 +504,7 @@ local paramSiM6 =
 local paramRIM6 = 
     { asset = "RIM6"
     , class = "SPBFUT"
-    , event = "OnParams"
+    , event = "onParams"
     , params =
         { STEPPRICE =
             { param_type = "1"
@@ -546,7 +546,7 @@ local paramRIM6 =
     }
 
 local loggedTrade =
-    { event = "OnLoggedTrade"
+    { event = "onLoggedTrade"
     , trade =
         { repoterm = 0
         , price = 90580

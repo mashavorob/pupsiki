@@ -11,7 +11,7 @@
 # or enable modeline in your .vimrc
 ]]
 
-q_utils = { }
+local q_utils = { }
 
 function q_utils.getMoneyLimit(account)
     local n = getNumberOf("futures_client_limits")
@@ -87,3 +87,4 @@ function q_utils.getFirmID()
     end
 end
 
+return q_utils

@@ -25,11 +25,13 @@ else
     jit = true
 end
 
-q_jit = {}
+local q_jit = {}
 
 function q_jit.isJIT()
     return jit
 end
+
+return q_jit
 
 
 

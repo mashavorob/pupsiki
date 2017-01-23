@@ -11,7 +11,10 @@
 # or enable modeline in your .vimrc
 ]]
 
-l2r = {
+local q_fname = false
+local q_table = false
+
+local l2r = {
     log = {
         namePattern = "logs/l2-events-%Y-%m-%d.log",
         name = "",
@@ -75,7 +78,7 @@ function l2r:onLogOpen()
             , PRICEMAX = getParamEx(item.class, item.asset, "PRICEMAX")
             , EXCH_PAY = getParamEx(item.class, item.asset, "EXCH_PAY")
             }
-        self:logItem { event="OnParams", class=item.class, asset=item.asset, params=params }
+        self:logItem { event="onParams", class=item.class, asset=item.asset, params=params }
     end
     
     -- log historical trades
@@ -108,7 +111,7 @@ function l2r:onLogOpen()
         local trade = getItem("all_trades", i)
         local c = counts[ trade.class_code .. trade.sec_code ]
         if c then
-            self:logItem { event="OnLoggedTrade", trade=trade }
+            self:logItem { event="onLoggedTrade", trade=trade }
         end
     end
 
@@ -138,8 +141,7 @@ function l2r:logItem(item)
 end
 
 function l2r:onInit()
-    assert(require("qlib/quik-table"))
-    self.qtable = qtable.create("conf/quik-l2-recorder.wpos", self.title, self.ui_mapping)
+    self.qtable = q_table.create("conf/quik-l2-recorder.wpos", self.title, self.ui_mapping)
     self.qtable.addRow(self.state)
     for _,item in ipairs(self.assets) do
         Subscribe_Level_II_Quotes(item.class, item.asset)
@@ -148,13 +150,13 @@ function l2r:onInit()
     self:onLogOpen()
 end
 
-function l2r:onTrade(trade)
+function l2r:onAllTrade(trade)
     for _, item in ipairs(self.assets) do
         if trade.class_code == item.class and trade.sec_code == item.asset then
             local receivedAt = self.quik_ext.gettime()
             local sentAt = os.time(trade.datetime) + trade.datetime.mcs/1e6
             self:logItem 
-                { event="onTrade"
+                { event="onAllTrade"
                 , received_time = receivedAt
                 , exchange_time = sentAt
                 , delay = receivedAt - sentAt
@@ -170,7 +172,14 @@ end
 function l2r:onQuote(class, asset)
     for _, item in ipairs(self.assets) do
         if class == item.class and asset == item.asset then
-            self:logItem { event="onQuote", time=self.quik_ext.gettime(), class=class, asset=asset, l2=getQuoteLevel2(class, asset) }
+            local receivedAt = self.quik_ext.gettime()
+            self:logItem 
+                { event="onQuote"
+                , received_time = receivedAt
+                , class=class
+                , asset=asset
+                , l2=getQuoteLevel2(class, asset) 
+                }
             break
         end
     end
@@ -227,15 +236,16 @@ function OnInit(scriptPath)
     
     package.cpath = package.cpath .. ";.\\lib?.dll;?.dll;" .. folder .. "lib?.dll;" .. folder .. "?.dll"
 
-    assert(require("qlib/quik-fname"))
+    q_fname = require("qlib/quik-fname")
     q_fname.root = folder
+    q_table = require("qlib/quik-table")
 
     recorder = l2r.create()
     recorder:onInit()
 end
 
 function OnAllTrade(trade)
-    recorder:onTrade(trade)
+    recorder:onAllTrade(trade)
 end
 
 function OnQuote(class, asset)
@@ -250,3 +260,5 @@ function main()
     end
     recorder:onClose()
 end
+
+return l2r

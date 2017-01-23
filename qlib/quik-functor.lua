@@ -11,9 +11,9 @@
 # or enable modeline in your .vimrc
 ]]
 
-q_functor = { }
+local q_functor = { }
 
-assert(require("qlib/quik-events"))
+local q_events = require("qlib/quik-events")
 assert(require("qlib/quik-books"))
 assert(require("qlib/quik-tables"))
 assert(require("qlib/quik-params"))
@@ -47,7 +47,7 @@ function q_functor.create(name, data, etc)
     self.s_params.etc.firmid = q_utils.getFirmID() or self.s_params.etc.firmid
 
     -- create a dummy instance of strategy and extract parameters
-    local dummy = self:createStartegy()
+    local dummy = self:createStrategy()
     self.prams = { }
     for _,descr in ipairs(dummy.etc.params) do
         table.insert(self.params, descr)
@@ -108,7 +108,7 @@ function q_functor:clone()
     return clone
 end
 
-function q_functor:createStartegy()
+function q_functor:createStrategy()
     assert(require("qlib/" .. self.s_params.name))
     local factory = assert(_G[self.s_params.name])
     local etc = {}
@@ -133,20 +133,20 @@ function q_functor:runDay(day)
 
     -- assume data starts with parameters and logged trades
     for _, rec in ipairs(day.params) do
-        if rec.event == "OnParams" then
+        if rec.event == "onParams" then
             self.q_params:updateParams(rec.class, rec.asset, rec.params)
             self.q_books:getBook(rec.class, rec.asset, self.q_params)
         end
     end
     for _, rec in day.preamble:items() do
-        if rec.event == "OnLoggedTrade" then
+        if rec.event == "onLoggedTrade" then
             table.insert(self.q_tables.all_trades, rec.trade)
         end
     end
     -- synchronize books and tables
     self.q_tables:syncTables(self.q_books, self.q_params)
 
-    self.q_events.strategy = assert(self:createStartegy())
+    self.q_events.strategy = assert(self:createStrategy())
     self.q_events.strategy:init()
 
     self.q_events:printHeaders()
@@ -180,9 +180,9 @@ function q_functor:runDay(day)
                 self.q_events:enqueueEvents(evs)
             end
         --[[
-        elseif rec.event == "OnParams" then
+        elseif rec.event == "onParams" then
             -- just ignore
-        elseif rec.event == "OnLoggedTrade" then
+        elseif rec.event == "onLoggedTrade" then
             -- just ignore
         ]]
         else
@@ -244,3 +244,5 @@ function q_functor:func()
 
     return margin
 end
+
+return q_functor

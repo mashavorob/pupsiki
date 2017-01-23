@@ -11,17 +11,17 @@
 # or enable modeline in your .vimrc
 ]]
 
-require("qlib/quik-etc")
-require("qlib/quik-logger")
-require("qlib/quik-table")
-require("qlib/quik-fname")
+local q_config = require("qlib/quik-etc")
+local q_fname = require("qlib/quik-fname")
+local q_log = require("qlib/quik-logger")
+local q_table = require("qlib/quik-table")
 
-q_runner = {}
+local q_runner = {}
 
 function q_runner.create(strategy, etc)
     local self =
         { strategy = false
-        , etc = config.create
+        , etc = q_config.create
             { asset = "RIZ5"
             , class = "SPBFUT"
             , logs =
@@ -44,8 +44,8 @@ function q_runner.create(strategy, etc)
     setmetatable(self, {__index = q_runner})
 
     self.strategy = strategy
-    self.etc = config.create( self.etc )
-    self.qtable = qtable.create(strategy.title .. ".wpos", strategy.title, strategy.ui_mapping)
+    self.etc = q_config.create( self.etc )
+    self.qtable = q_table.create(strategy.title .. ".wpos", strategy.title, strategy.ui_mapping)
     self.etc.logs = {
         ordersLog = "logs/orders[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
         replyLog  = "logs/orders-replies[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
@@ -105,7 +105,7 @@ function q_runner:checkLogs()
         fname = q_fname.normalize(os.date(fname))
         if not self.logs[log] or fname ~= self.logs[log].getFileName() then
             local oldLog = self.logs[log]
-            self.logs[log] = csvlog.create(fname, logColumns[log])
+            self.logs[log] = q_log.create(fname, logColumns[log])
             if oldLog then
                 oldLog.close()
             end
@@ -188,4 +188,4 @@ function q_runner:onClose()
     end
 end
 
-
+return q_runner

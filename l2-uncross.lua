@@ -40,9 +40,9 @@ end
 for line in io.stdin:lines() do
     local ev = q_persist.parseLine(line)
 
-    if ev.event == "OnParam" then
+    if ev.event == "onParam" then
         print(line) -- do not decode
-    elseif ev.event == "OnLoggedTrade" then 
+    elseif ev.event == "onLoggedTrade" then 
         print(line) -- do not decode
     elseif ev.event == "onQuote" then
         print(q_persist.toString(ev))

@@ -1,9 +1,10 @@
 #!/usr/bin/env luajit
 -- vi: ft=lua:fenc=cp1251 
-
 --[[
 #
-# Проигрывание записанных маркетных данных (уровень 2)
+# Симуляция работы биржи
+#
+# Пример использования:
 #
 # Если Вы можете прочитать эту строку то все нормально
 # If you cannot read the line above you editor use wrong encoding
@@ -13,7 +14,7 @@
 ]]
 
 local helpMessage = [[
-l2-player is for playback previously recorded market data and optimize strategies' parameters
+l2-player-II is for playback previously recorded market data and optimize strategies' parameters
 Usage:
 
 %s <operation> <options> <strategy> <log-file> [log-file] ... [log-file]
@@ -21,24 +22,22 @@ Usage:
 Where
     <operation> could be:
     run         - run specified strategy
-    optimize    - optimize specified strategy
     probe       - probe different values of a parameter
     --help,/?   - show this message
     
     <options>   - depend on command, see details:
         run       - supports no options
-        optimize  - support no options
         probe     - following options are mandatory:
             -param <parameter> <from> <to> <step> - specifies name and range for parameter to probe
                                                     it is possible to specify many '-param' options
 ]]
 
+
 local q_jit = require("qlib/quik-jit")
-assert(require("qlib/quik-simulator"))
-local q_persist = assert(require("qlib/quik-l2-persist"))
+local q_simulator = require("qlib/quik-simulator-II")
 
 print("")
-print("Level 2 Market Data Player (c) 2016")
+print("Level 2 Market Data Player II (c) 2016, 2017")
 
 if q_jit.isJIT() then
     print("LuaJIT detected")
@@ -110,34 +109,9 @@ local function parseArgs()
     return op, options, strategy, logs
 end
 
-local function loadMarketData(logs)
-    local data = {}
-
-    for _, f in ipairs(logs) do
-        local fdata = q_persist.loadL2Log(f)
-        table.insert(data, fdata)
-    end
-    return data
-end
-
-local function runStrategy(strategy, container)
-    local margin = q_simulator.runStrategy(strategy, container)
+local function runStrategy(strategy, logs)
+    local margin = q_simulator.runStrategy(strategy, logs)
     print(string.format("total margin: %f", margin))
-end
-
-local function optimizeStrategy(strategy, container)
-    local before, after, params = q_simulator.optimizeStrategy(strategy, container)
-
-    if params == nil then
-        print("Optimization did not find better paramters")
-    else
-        print("Optimal parameters are:")
-        for k,v in pairs(params) do
-            print(string.format("%s = %s", k, tostring(v)))
-        end
-        print(string.format("Margin before optimization: %f", before))
-        print(string.format("Margin after  optimization: %f", after))
-    end
 end
 
 local function paramsToString(params)
@@ -226,7 +200,7 @@ local function printResults(f_out, results)
     end
 end
 
-local function probeParam(strategy, container, options, ctx)
+local function probeParam(strategy, logs, options, ctx)
 
     local fname = nil
     if not ctx then
@@ -258,7 +232,7 @@ local function probeParam(strategy, container, options, ctx)
 
         local result = 
             { params = copy(ctx)
-            , value = q_simulator.runStrategy(strategy, container, ctx)
+            , value = q_simulator.runStrategy(strategy, logs, ctx)
             }
 
         print("Result:", result.value)
@@ -294,7 +268,7 @@ local function probeParam(strategy, container, options, ctx)
 
         --table.insert(inner_ctx, { param=param.param, value=param.value })
 
-        local inner_results = probeParam(strategy, container, inner_options, inner_ctx)
+        local inner_results = probeParam(strategy, logs, inner_options, inner_ctx)
 
         for _,r in ipairs(inner_results) do
             table.insert(results, r)
@@ -319,23 +293,13 @@ for i, l in ipairs(logs) do
 end
 print(string.format("op=%s strategy=%s%s", op, strategy, ll))
 
-print("loading market data")
-local container = loadMarketData(logs)
-
-print("preprocessing market data")
-container = q_simulator.preProcessData(container)
-collectgarbage()
-
 if op == "run" then
     print(string.format("Running %s", strategy))
-    runStrategy(strategy, container)
-elseif op == "optimize" then
-    print(string.format("Optimizing %s", strategy))
-    optimizeStrategy(strategy, container)
+    runStrategy(strategy, logs)
 elseif op == "probe" then
     print(string.format("Probbing %s for %d parameters"
         , strategy, #options))
-    probeParam(strategy, container, options)
+    probeParam(strategy, logs, options)
 else
     assert(false, "Operation '" .. op .. "' is not supported")
 end

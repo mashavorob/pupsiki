@@ -11,13 +11,13 @@
 # or enable modeline in your .vimrc
 ]]
 
+local q_fname = require("qlib/quik-fname")
+local q_utils = require("qlib/quik-utils")
 assert(require("qlib/quik-book"))
-assert(require("qlib/quik-fname"))
-assert(require("qlib/quik-utils"))
-assert(require("qlib/quik-functor"))
 assert(require("qlib/quik-avd"))
 
-local q_l2_data = assert(require("qlib/quik-jit-l2-data"))
+local q_functor = require("qlib/quik-functor")
+local q_l2_data = require("qlib/quik-jit-l2-data")
 
 q_simulator = {}
 
@@ -91,7 +91,7 @@ end
 
 function q_simulator.preProcessData(data)
     local filter = function(rec)
-        if rec.event == "OnLoggedTrade" and rec.trade.sec_code ~= etc.asset then 
+        if rec.event == "onLoggedTrade" and rec.trade.sec_code ~= etc.asset then 
             -- filter out
             return false
         elseif rec.event == "onTrade" and rec.trade.sec_code ~= etc.asset then 
