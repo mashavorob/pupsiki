@@ -17,6 +17,10 @@ local q_book = require("qlib/quik-book-II")
 local q_persist = require("qlib/quik-l2-persist")
 local q_client = require("qlib/quik-book-client")
 local q_utils = require("qlib/quik-utils")
+local ProFi = require("ProFi")
+local simTime = 0
+local simTransId = 1000000
+
 
 local instance = nil
 
@@ -123,6 +127,14 @@ function q_functor:createStrategy()
     return strategy
 end
 
+function q_functor:freeStrategy()
+    package.loaded["qlib/" .. self.s_params.name] = nil
+    package.loaded["qlib/quik-avg"] = nil
+    package.loaded["qlib/quik-order"] = nil
+    package.loaded["qlib/quik-time"] = nil
+    collectgarbage()
+end
+
 function q_functor:runDay(day)
     
     self.book = q_book.create()
@@ -134,28 +146,54 @@ function q_functor:runDay(day)
     -- reset state
 
 
+    --ProFi:start("many")
+
     local headers = 
         { onParams = true
         , onLoggedTrade = true
         }
     local balanceAtStart = 0
     local file = assert(io.open(day,"r"))
+    local reportPeriod = 30
+    local reportTime = os.clock() - reportPeriod - 1
+    local stopTime
     for line in file:lines() do
-        local rec = q_persist.parseLine(line)
-        if not self.strategy and not headers[rec.event] ~= "onParams" then
-            self.strategy = self:createStrategy()
-            self.client = q_client.create(self.book, self.strategy, 30000)
-            self.strategy:init()
-            self.strategy:onStartTrading()
-            balanceAtStart = self.client:getBalance()
+        local success, rec = pcall(q_persist.parseLine, line)
+        if success then
+            local now = os.clock()
+            simTime = rec.time or simTime
+            if rec.time and not stopTime then
+                stopTime = rec.time + 3600 -- 1 hour of record
+            end
+            if rec.time and rec.time > stopTime then
+                break
+            end
+            if rec.time and now >= reportTime + reportPeriod then
+                reportTime = now
+                local margin = self.client:getBalance(book) - balanceAtStart
+                io.stderr:write(string.format("processing %s, margin: %s\n", os.date('%Y%m%d-%H:%M:%S', rec.time), tostring(margin)))
+            end
+            if not self.strategy and not headers[rec.event] then
+                self.strategy = self:createStrategy()
+                self.client = q_client.create(self.book, self.strategy, 30000)
+                self.strategy:init()
+                self.strategy:onStartTrading()
+                balanceAtStart = self.client:getBalance()
+            end
+            self.book:onEvent(self.superClient, rec)
+            self.book:flushEvents()
         end
-        self.book:onEvent(self.superClient, rec)
     end
     file:close()
+    
+    ProFi:stop()
+    ProFi:writeReport()
 
     local margin = self.client:getBalance(book) - balanceAtStart
 
     instance = nil
+    self:freeStrategy()
+    self.book.reset()
 
     return margin
 end
@@ -210,7 +248,7 @@ end
 
 function getParamEx(class, asset, pname)
     local pp = instance.book:getParams(class, asset)
-    return pp[pname]
+    return pp[pname] or { param_value=0 }
 end
 
 function getQuoteLevel2(class, asset)
@@ -244,5 +282,15 @@ function sendTransaction(trans)
     return ""
 end
 
+quik_ext = {}
+
+function quik_ext.gettime()
+    return simTime
+end
+
+function quik_ext.gettransid()
+    simTransId = simTransId + 1
+    return simTransId
+end
 
 return q_functor

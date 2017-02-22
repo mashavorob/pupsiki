@@ -83,10 +83,10 @@ function q_order.onTransReply(reply)
     if order then
         return order:onTransReply(reply)
     end
-    local trans_id = killTargets[reply.tras_id]
+    local trans_id = killTargets[reply.trans_id]
     if trans_id then
-        killTargets[reply.trans_id] = nil
         order = allOrders[trans_id]
+        killTargets[reply.trans_id] = nil
         if order then
             order:onKillReply(reply)
         end
@@ -151,7 +151,7 @@ function q_order.onIdle()
             order.pending = false
             order.ttl = order.ttl - 1
             if order.ttl <= 0 then
-                allOrders[trans_id] = nil
+                allOrders[order.trans_id] = nil
                 order.ttl = 0
                 --message(string.format("Order unlinked: order_num=%s, trans_id=%d", tostring(order.order_num), order.trans_id), 2)
             end
@@ -190,6 +190,11 @@ function q_order.removeOwnOrders(l2)
         end
     end
 
+end
+
+function q_order.init()
+    allOrders = {}
+    killTargets = {}
 end
 
 function order:updateIndex()
@@ -237,8 +242,11 @@ function order:kill()
         return true
     end
     self.lastKill = now
+
+    local killerTransId = self.getNextTransId()
+
     local trans = {
-        TRANS_ID=tostring(self.getNextTransId()),
+        TRANS_ID=tostring(killerTransId),
         CLASSCODE=self.class,
         SECCODE=self.asset,
         ACTION="KILL_ORDER",
@@ -246,6 +254,7 @@ function order:kill()
     }
     local res = sendTransaction(trans)
     if res == "" then
+        killTargets[killerTransId] = self.trans_id
         return true, res
     end
     return false, res
@@ -325,6 +334,7 @@ function order:onTransReply(reply)
         self.size = 0
         self.balance = 0
     else
+        assert(reply.order_num)
         self.order_num = reply.order_num 
         err = ""
     end

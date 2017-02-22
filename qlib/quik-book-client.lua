@@ -13,6 +13,46 @@
 
 local client = {}
 
+function client:pushOnAllTrade(trade)
+    table.insert(self.events, { event="onAllTrade", data=trade })
+end
+
+function client:pushOnTransReply(transReply)
+    table.insert(self.events, { event="onTransReply", data=transReply })
+end
+
+function client:pushOnQuote(class, asset)
+    table.insert(self.events, { event="onQuote", data={class=class, asset=asset} })
+end
+
+function client:pushOnTrade(trade)
+    table.insert(self.events, { event="onTrade", data=trade })
+end
+
+function client:pushOnTestOrder(order)
+    table.insert(self.events, { event="onTestOrder", data=order })
+end
+
+function client:flushEvents()
+    local events = self.events
+    self.events = {}
+    for _,ev in ipairs(events) do
+        if ev.event == "onAllTrade" then
+            self:fireOnAllTrade(ev.data)
+        elseif ev.event == "onTransReply" then
+            self:fireOnTransReply(ev.data)
+        elseif ev.event == "onQuote" then
+            self:fireOnQuote(ev.data.class, ev.data.asset)
+        elseif ev.event == "onTrade" then
+            self:fireOnTrade(ev.data)
+        elseif ev.event == "onTestOrder" then
+            self:fireOnTestOrder(ev.data)
+        else
+            assert(false, "Unknown event type")
+        end
+    end
+end
+
 function client:fireOnAllTrade(trade)
     self.cbs.onAllTrade(trade)
 end
@@ -88,22 +128,15 @@ end
 function client:onQuoteChange(order, params, size)
     -- change reserve and limits
     local buydepo = params.BUYDEPO and tonumber(params.BUYDEPO.param_value)
-    local selldepo = params.SELDEPO and tonumber(params.SELDEPO.param_value)
+    local selldepo = params.SELLDEPO and tonumber(params.SELLDEPO.param_value)
+    if buydepo and selldepo then
+        buydepo = buydepo > 0 and buydepo or selldepo
+        selldepo = selldepo > 0 and selldepo or buydepo
+    end
     assert(buydepo, string.format("BUYDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
-    assert(selldepo, string.format("SELDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
+    assert(selldepo, string.format("SELLDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
 
     local limits = self:getFuturesLimits()
-
-    print("-----")
-    print("Before:")
-    print(string.format("      buydepo: %s", tostring(buydepo)))
-    print(string.format("     selldepo: %s", tostring(selldepo)))
-    print(string.format("    operation: %s", order.OPERATION))
-    print(string.format("         size: %s", tostring(size)))
-    print(string.format("       locked: %s", tostring(limits.cbplused)))
-    print(string.format("      planned: %s", tostring(limits.cbplplanned)))
-    print(string.format("    available: %s", tostring(limits.cbplimit)))
-    print("-----")
 
     local diff = size*(order.OPERATION == 'B' and buydepo or selldepo)
     if limits.cbplused + diff > limits.cbplimit then
@@ -111,12 +144,6 @@ function client:onQuoteChange(order, params, size)
     end
     limits.cbplused = limits.cbplused + diff
     limits.cbplplanned = limits.cbplimit - limits.cbplused
-    print("After:")
-    print(string.format("       locked: %s", tostring(limits.cbplused)))
-    print(string.format("      planned: %s", tostring(limits.cbplplanned)))
-    print(string.format("    available: %s", tostring(limits.cbplimit)))
-    print("-----")
-    print("")
 
     return true
 end
@@ -132,10 +159,14 @@ function client:onOrderFilled(order, price, diff)
     local params = self.book:getParams(order.CLASSCODE, order.SECCODE)
     
     local buydepo = params.BUYDEPO and tonumber(params.BUYDEPO.param_value)
-    local selldepo = params.SELDEPO and tonumber(params.SELDEPO.param_value)
-    local exchpay = params.EXCH_PAY and tonumber(params.EXCH_PAY.param_value)
+    local selldepo = params.SELLDEPO and tonumber(params.SELLDEPO.param_value)
+    local exchpay = params.EXCH_PAY and tonumber(params.EXCH_PAY.param_value) or 0
+    if buydepo and selldepo then
+        buydepo = buydepo > 0 and buydepo or selldepo
+        selldepo = selldepo > 0 and selldepo or buydepo
+    end
     assert(buydepo, string.format("BUYDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
-    assert(selldepo, string.format("SELDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
+    assert(selldepo, string.format("SELLDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
 
     local closeAmount = 0
     local openAmount = 0
@@ -165,12 +196,8 @@ function client:onOrderFilled(order, price, diff)
     holdings.positionvalue = holdings.totalnet*holdings.price
     holdings.varmargin = holdings.cashflow + holdings.positionvalue
 
-    print(string.format(" Money reserved: %d (%d)", limits.cbplused, moneyToReserve, moneyToRelease))
-    print(string.format("Money available: %d", limits.cbplplanned))
-    print(string.format("       Position: %d", holdings.totalnet))
-    print(string.format(" Position value: %d", holdings.positionvalue))
-    print(string.format("           Paid: %d", holdings.cashflow))
-    print(string.format("         Margin: %d", holdings.varmargin))
+    assert(limits.cbplplanned >=0)
+    return moneyToPay
 end
 
 function client:getBalance()
@@ -217,7 +244,9 @@ function factory.create(book, strategy, limit)
         , cbs =
             { onAllTrade = function(trade) strategy:onAllTrade(trade) end
             , onTransReply = function(reply) strategy:onTransReply(reply) end
-            , onQuote = function(class, asset) strategy:onQuote(class, asset) end
+            , onQuote = function(class, asset)
+                  strategy:onQuote(class, asset) 
+              end
             , onTrade = function(trade) strategy:onTrade(trade) end
             , onTestOrder = strategy["onTestOrder"] and function(order) strategy:onTestOrder(order) end or function() end
             }
@@ -226,12 +255,19 @@ function factory.create(book, strategy, limit)
             , futures_client_limits = {}
             , orders = {}
             }
+        , events = {}
         }
 
     setmetatable(self, { __index = client })
     setmetatable(self.tables, { __index = book.tables })
 
     book:addClient(self)
+    -- warming up
+    self:getFuturesLimits()
+    local assets = book:getAssetList("SPBFUT")
+    for _,asset in ipairs(assets) do
+        self:getFuturesHoldings("SPBFUT", asset)
+    end
     
     return self
 end

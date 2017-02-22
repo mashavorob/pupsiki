@@ -54,7 +54,6 @@ local function isTradePossible(book, t_ev)
     if bit.band(t_ev.trade.flags, 1) ~= 0 then
         -- sell
         res = (bid and bid == t_ev.trade.price)
-        return res
     else
         -- buy
         res = (ask and ask == t_ev.trade.price)
@@ -72,14 +71,14 @@ local function canWait(t_ev, window)
         if q_ev.event == "onQuote" then
             local q_time = q_ev.time 
             if q_time - t_time > maxTradeDelay then
-                break
+                return false
             end
             if isTradePossible(q_ev.l2, t_ev) then
-                return true
+                return false
             end
         end
     end
-    return false
+    return true
 end
 
 local function printOrder(order)
@@ -94,7 +93,28 @@ local function printOrder(order)
 end
 
 local function getKey(event)
-    return event.class .. ":" .. event.asset
+    if not event.class and event.trade then
+        event.class = event.trade.class_code
+        event.asset = event.trade.sec_code
+    end
+    return event.class .. "-" .. event.asset
+end
+local function getTradesNumber()
+    local order = {}
+    local n = 0
+    for key,tt in pairs(trades) do
+        n = n + #tt
+        table.insert(order, key)
+    end
+    table.sort(order, function(a, b) return #(trades[a]) > #(trades[b]) end)
+    local s = ""
+    for i,k in ipairs(order) do
+        if i > 3 then
+            break
+        end
+        s = s .. string.format("%s:%d, ", k, #(trades[k]))
+    end
+    return string.format("total %d, %s", n, s)
 end
 
 local function getTrades(event)
@@ -117,21 +137,19 @@ local function getBook(event)
     return book
 end
 
-local transIds = {}
 local nextTransId = 1e7
 
-local function makeOrder(event, op, action, condition, price, quantity)
-    local key = string.format("%s-%s:%s@%f", event.class, event.asset, op, price)
-    local id = transIds[key]
-    if not id then
-        id = tostring(nextTransId)
+local function makeOrder(event, op, action, condition, price, quantity, trans_id)
+    local newOrder = false
+    if not trans_id then
+        newOrder = true
+        trans_id = tostring(nextTransId)
         nextTransId = nextTransId + 1
-        transIds[key] = id
     end
     return
         { CLASSCODE = event.class
         , SECCODE = event.asset
-        , TRANS_ID = id
+        , TRANS_ID = trans_id
         , OPERATION = op
         , ACTION = action
         , TYPE = "L"
@@ -143,39 +161,23 @@ end
 
 local side2op = { bid="B", offer="S" }
 
-local function onBookSide(event, side, count, quotes, newCount, newQuotes)
-    -- add new and correct existing
-    local index = 1
-    for i = 1,newCount do
-        local newQuote = newQuotes[i]
-        while index <= count and quotes[index].price < newQuote.price do
-            index = index + 1
-        end
-        local order = false
-        if index > count or quotes[index].price > newQuote.price then
-            table.insert(quotes, index, newQuote)
-            count = count + 1
-            local order = makeOrder(event, side, "NEW_ORDER", "PUT_IN_QUEUE", newQuote.price, newQuote.quantity)
-            printOrder(order)
-        elseif quotes[index].quantity ~= newQuote.quantity then
-            quotes[index].quantity = newQuote.quantity
-            order = makeOrder(event, side, "CORRECT_ORDER", nil, newQuote.price, newQuote.quantity)
-            printOrder(order)
-        end
-    end
-
+local function cancelObsoleteOrders(event, side, quotes, newQuotes)
     -- cancel removed
-    index = 1
+    local index = 1
     local toRemove = {}
-    for i = 1,count do
-        local quote = quotes[i]
-        while index <= newCount and newQuotes[index].price < quote.price do
+
+    for i,quote in ipairs(quotes) do
+        while index <= #newQuotes and newQuotes[index].price < quote.price do
             index = index + 1
         end
-        if index > newCount or newQuotes[index].price > quote.price then
+        if index > #newQuotes or newQuotes[index].price > quote.price then
+            for _,order in ipairs(quote.orders) do
+                local order_key = order.TRANS_ID
+                order = makeOrder(event, side, "KILL_ORDER", nil, nil, nil)
+                order.ORDER_KEY = order_key
+                printOrder(order)
+            end
             table.insert(toRemove, 1, i)
-            order = makeOrder(event, side, "KILL_ORDER", nil, quote.price, nil)
-            printOrder(order)
         end
     end
 
@@ -183,21 +185,74 @@ local function onBookSide(event, side, count, quotes, newCount, newQuotes)
     for _,i in ipairs(toRemove) do
         table.remove(quotes, i)
     end
-    assert((count - #toRemove) == newCount)
-    return newCount
+end
+
+local function onSendNewOrders(event, side, quotes, newQuotes)
+
+    -- add new and correct existing
+    local index = 1
+    for i,newQuote in ipairs(newQuotes) do
+        while index <= #quotes and quotes[index].price < newQuote.price do
+            index = index + 1
+        end
+        if index > #quotes or quotes[index].price > newQuote.price then
+            table.insert(quotes, index, newQuote)
+            local order = makeOrder(event, side, "NEW_ORDER", "PUT_IN_QUEUE", newQuote.price, newQuote.quantity)
+            quotes[index].orders = { order } 
+            printOrder(order)
+        elseif quotes[index].quantity < newQuote.quantity then
+            local q = quotes[index]
+            local diff = newQuote.quantity - q.quantity
+            local order = makeOrder(event, side, "NEW_ORDER", "PUT_IN_QUEUE", q.price, diff)
+            q.quantity = q.quantity + diff
+            table.insert(q.orders, #quotes[index].orders, order)
+            printOrder(order)
+        else
+            local q = quotes[index]
+            while q.quantity > newQuote.quantity do
+                local diff = q.quantity - newQuote.quantity
+                local tail = q.orders[#q.orders]
+                assert(tail.TRANS_ID)
+                local tailQuantity = tonumber(tail.QUANTITY)
+                if tailQuantity <= diff then
+                    diff = tailQuantity
+                    table.remove(q.orders, #q.orders)
+                    local order = makeOrder(event, side, "KILL_ORDER", nil, nil, nil)
+                    order.ORDER_KEY=tail.TRANS_ID
+                    printOrder(order)
+                else
+                    tailQuantity = tailQuantity - diff
+                    tail.QUANTITY = tostring(tailQuantity)
+                    local order = makeOrder(event, side, "CORRECT_ORDER", nil, newQuote.price, newQuote.quantity)
+                    order.ORDER_KEY=tail.TRANS_ID
+                    printOrder(order)
+                end
+                q.quantity = q.quantity - diff
+            end
+        end
+    end
+
+    assert(#quotes == #newQuotes)
 end
 
 local function onBook(event, oldBook, newBook)
     oldBook.bid = oldBook.bid or {}
     oldBook.offer = oldBook.offer or {}
-    oldBook.bid_count = onBookSide(event, 'B', oldBook.bid_count or 0, oldBook.bid, newBook.bid_count or 0, newBook.bid)
-    oldBook.offer_count = onBookSide(event, 'S', oldBook.offer_count or 0, oldBook.offer, newBook.offer_count or 0, newBook.offer)
+    newBook.bid = newBook.bid or {}
+    newBook.offer = newBook.offer or {}
+    -- cancel old orders
+    cancelObsoleteOrders(event, 'B', oldBook.bid, newBook.bid) 
+    cancelObsoleteOrders(event, 'S', oldBook.offer, newBook.offer) 
+    onSendNewOrders(event, 'B', oldBook.bid, newBook.bid) 
+    onSendNewOrders(event, 'S', oldBook.offer, newBook.offer)
+    oldBook.bid_count = #oldBook.bid
+    oldBook.offer_count = #oldBook.offer
 
     local function assertEq(_1, _2)
         assert(_1.c == _2.c)
         for i = 1,_1.c do
             assert(_1.q[i].price == _2.q[i].price)
-            assert(_1.q[i].quantity == _2.q[i].quantity)
+            assert(_1.q[i].quantity == _2.q[i].quantity, string.format("expected %d, found %d", _1.q[i].quantity, _2.q[i].quantity))
         end
     end
 
@@ -205,7 +260,10 @@ local function onBook(event, oldBook, newBook)
     assertEq( {c=oldBook.offer_count, q=oldBook.offer}, {c=newBook.offer_count, q=newBook.offer})
 end
 
+local lastQuote = false 
+
 local function onQuote(event)
+    lastQuote = event.time
     local newBook = event.l2
     local oldBook = getBook(event)
     onBook(event, oldBook, newBook)
@@ -221,8 +279,6 @@ local function onTrade(event)
     local tradeSide = (bit.band(trade.flags, 1) ~= 0) and 'S' or 'B'
 
     if tradeSide == 'S' then
-        assert(newBook.offer_count)
-        assert(newBook.offer_count == 0 or newBook.offer[1].price)
         assert(trade.price)
         while newBook.offer_count > 0 and trade.price >= newBook.offer[1].price do
             table.remove(newBook.offer, 1)
@@ -237,8 +293,8 @@ local function onTrade(event)
             newBook.bid = newBook.bid or {}
             table.insert(newBook.bid, { price=trade.price, quantity=trade.qty })
         end
-        if newBook.bid[newBook.bid_count].quantity < trade.qty then
-            newBook.bid[newBook.bid_count].quantity = trade.qty
+        if newBook.bid[newBook.bid_count].quantity < trade.qty + 1 then
+            newBook.bid[newBook.bid_count].quantity = trade.qty + 1
         end
     else
         while newBook.bid_count > 0 and trade.price <= newBook.bid[newBook.bid_count].price do
@@ -254,13 +310,32 @@ local function onTrade(event)
             newBook.offer = newBook.offer or {}
             table.insert(newBook.offer, 1, { price=trade.price, quantity=trade.qty })
         end
-        if newBook.offer[1].quantity < trade.qty then
-            newBook.offer[1].quantity = trade.qty
+        if newBook.offer[1].quantity < trade.qty + 1 then
+            newBook.offer[1].quantity = trade.qty + 1
         end
     end
+
     onBook(event, oldBook, newBook)
     local order = makeOrder(event, tradeSide, 'NEW_ORDER', 'KILL_BALANCE', trade.price, trade.qty)
     printOrder(order)
+
+    -- correct book after trade
+    local book = getBook(event)
+    local q = (tradeSide == 'S') and book.bid[newBook.bid_count] or book.offer[1]
+    q.quantity = q.quantity - trade.qty
+end
+
+local function stripOrders(o)
+    if type(o) == "table" then
+        local c = {}
+        for k,v in pairs(o) do
+            if k ~= 'orders' then
+                c[k] = stripOrders(v)
+            end
+        end
+        return c
+    end
+    return o
 end
 
 local function processLine(window)
@@ -275,32 +350,51 @@ local function processLine(window)
     -- they consist with market or maximum reasonable delay reached
     if ev.event == "onQuote" then 
         onQuote(ev)
+        print( q_persist.toString(stripOrders(ev)) )
         
-        while #tt > 0 and isTradePossible(ev.l2, tt[1]) do
+        while #tt > 0 and (isTradePossible(ev.l2, tt[1]) or not canWait(tt[1], window)) do
             onTrade(tt[1])
             table.remove(tt, 1)
         end
-    elseif ev.event == "onTrade" then
+    elseif ev.event == "onAllTrade" then
+        while #tt > 0 do
+            onTrade(tt[1])
+            table.remove(tt, 1)
+        end
         local book = getBook(ev)
-        local count = #tt
-        local p = isTradePossible(book, ev)
-        local cw = canWait(ev, window)
-        if #tt > 0 or ((not isTradePossible(book, ev)) and canWait(ev, window)) then
+        if not isTradePossible(book, ev) then
             table.insert(tt, ev)
         else
             onTrade(ev)
         end
+        print( q_persist.toString(ev) )
+    else
+        print( q_persist.toString(ev) )
     end
-    print( q_persist.toString(ev) )
+    
 end
 
 local window = {}
+local ln = 1
+local prevQuote = 0
 
 for line in io.stdin:lines() do
-    local ev = q_persist.parseLine(line)
-    table.insert(window, ev)
-    while #window > windowSize do
-        processLine(window)
+    local success, ev = pcall(q_persist.parseLine, line)
+    if success then
+        table.insert(window, ev)
+        while #window > windowSize do
+            processLine(window)
+        end
+    else
+        io.stderr:write( string.format("Error parsing line %d, erroneous line is:\n%s\n", ln, line) )
+    end
+    ln = ln + 1
+    if lastQuote and lastQuote - prevQuote > 180 then
+        prevQuote = lastQuote
+        local ts = os.date('%Y%m%d-%H:%M', lastQuote)
+        io.stderr:write(string.format("%d: last quote time %s\n", ln, ts))
+    elseif not lastQuote and ln % 50000 == 0 then
+        io.stderr:write(string.format("%d: lines processed\n", ln))
     end
 end
 

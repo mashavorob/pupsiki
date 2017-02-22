@@ -110,7 +110,6 @@ function tester:onTransReply(reply)
 end
 
 function tester:onQuote(class, asset)
-    print("onQuote()")
     self:logItem 
         { event="onQuote"
         , class = class

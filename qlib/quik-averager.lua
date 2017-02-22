@@ -15,6 +15,7 @@ local q_config = require("qlib/quik-etc")
 local q_order = require("qlib/quik-order")
 local q_utils = require("qlib/quik-utils")
 local q_avg = require("qlib/quik-avg")
+
 assert(require("qlib/quik-time"))
 
 local q_averager = 
@@ -197,7 +198,7 @@ function q_averager.create(etc)
 end
 
 function strategy:checkSchedule()
-    local now = self.now or os.time()
+    local now = quik_ext.gettime()
     for _,period in ipairs(self.etc.schedule) do
         if period:isInside(now) then
             return true
@@ -207,7 +208,7 @@ function strategy:checkSchedule()
 end
 
 function strategy:isEOD()
-    local now = self.now or os.time()
+    local now = quik_ext.gettime()
     local timeLeft = self.etc.schedule[#self.etc.schedule]:getTimeLeft(now)
     return timeLeft < 60*5
 end
@@ -258,12 +259,45 @@ function strategy:calcBalance()
 end
 
 function strategy:init()
+    q_order.init()
 
     self.etc.account = q_utils.getAccount() or self.etc.account
     self.etc.firmid = q_utils.getFirmID() or self.etc.firmid
 
     self.etc.limit = self:getLimit()
+    self.state =
+            { halt = false   -- immediate stop
+            , pause = true   -- temporary stop
+            , cancel = true  -- closing current position
 
+            , phase = PHASE_INIT
+
+            -- profit/loss
+            , balance =
+                { atStart = 0
+                , maxValue = 0
+                , currValue = 0
+                }
+
+            -- market status
+            , market =
+                { bid = 0
+                , offer = 0
+                , mid = 0
+                , avgMid = 0
+                , avgTrend = 0
+                , dev_2 = 0     -- deviation^2
+                , deviation = 0
+                }
+
+            , targetPos = 0
+            , position = 0
+            
+            , order = { }
+            , take_profit = { } -- multiply orders
+            , state = "--"
+            , count = -100
+            }
     self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
 
     -- initial counters and position
@@ -400,6 +434,7 @@ end
 function strategy:onStartTrading()
     self.state.pause = false
     self.state.halt = false
+    self.state.cancel = false
 end
 
 function strategy:isHalted()
@@ -474,6 +509,7 @@ function strategy:onQuote(class, asset)
     if class ~= self.etc.class or asset ~= self.etc.asset then
         return
     end
+
     if self:checkL2() then
         self:calcPlannedPos()
         self:onMarketShift()
@@ -482,7 +518,7 @@ end
 
 function strategy:onIdle(now)
 
-    self.now = now or os.time()
+    self.now = quik_ext.gettime()
     q_order.onIdle()
     self:updatePosition()
     self:onMarketShift()

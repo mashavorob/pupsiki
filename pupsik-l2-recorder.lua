@@ -29,8 +29,8 @@ local l2r = {
         state = "Запись",
     },
     assets = {
-        { class='SPBFUT', asset='SiU6' },
-        { class='SPBFUT', asset='EuU6' },
+        { class='SPBFUT', asset='SiH7' },
+        { class='SPBFUT', asset='EuH7' },
         { class='CETS', asset='EUR_RUB__TOD' },
         { class='CETS', asset='EUR_RUB__TOM' },
         { class='CETS', asset='USD000000TOD' },
@@ -73,10 +73,11 @@ function l2r:onLogOpen()
             { SEC_PRICE_STEP = getParamEx(item.class, item.asset, "SEC_PRICE_STEP")
             , STEPPRICE = getParamEx(item.class, item.asset, "STEPPRICE")
             , BUYDEPO = getParamEx(item.class, item.asset, "BUYDEPO")
-            , SELDEPO = getParamEx(item.class, item.asset, "SELDEPO")
+            , SELLDEPO = getParamEx(item.class, item.asset, "SELLDEPO")
             , PRICEMIN = getParamEx(item.class, item.asset, "PRICEMIN")
             , PRICEMAX = getParamEx(item.class, item.asset, "PRICEMAX")
             , EXCH_PAY = getParamEx(item.class, item.asset, "EXCH_PAY")
+            , SETTLEPRICE = getParamEx(item.class, item.asset, "SETTLEPRICE")
             }
         self:logItem { event="onParams", class=item.class, asset=item.asset, params=params }
     end

@@ -487,7 +487,7 @@ local paramSiM6 =
             , result = "1"
             , param_image = "68 318"
             }
-        , SELDEPO = { param_type = "0"
+        , SELLDEPO = { param_type = "0"
             , param_value = "0.000000"
             , result = "0"
             , param_image = ""
@@ -530,7 +530,7 @@ local paramRIM6 =
             , result = "1"
             , param_image = "93 820"
             }
-        , SELDEPO =
+        , SELLDEPO =
             { param_type = "0"
             , param_value = "0.000000"
             , result = "0"
