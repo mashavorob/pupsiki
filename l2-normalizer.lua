@@ -31,8 +31,14 @@ local function getTimeOfDay(t)
 end
 
 local windowSize = 1000
+local window = {}
+local delayTolerance = 1
+local minDelay = 10
+local ln = 0
+local seq_num = 1
 
-local startFrom = getTimeOfDay {hour=11}
+
+local startFrom = getTimeOfDay {hour=11, min=30}
 local endAt = getTimeOfDay {hour=19}
 
 local function makeCopy(t)
@@ -47,17 +53,7 @@ local function makeCopy(t)
     end
     return t
 end
-
-local delayTolerance = 1
-local minDelay = 10
-local window = {}
-local ln = 0
-
 local function printEvent(ev)
-    local t = getTimeOfDay(ev.time or ev.received_time)
-    if t and (t < startFrom or t > endAt) then
-        return
-    end
     print( q_persist.toString(ev) )
 end
 
@@ -78,6 +74,11 @@ local function processLine(window)
     local ev = window[1]
     table.remove(window, 1)
 
+    local t = getTimeOfDay(ev.time or ev.received_time)
+    if t and (t < startFrom or t > endAt) then
+        return
+    end
+
     if ev.event == "onQuote" then
        
         -- check if there are trades in the window
@@ -87,7 +88,7 @@ local function processLine(window)
             local n_ev = window[i]
             if n_ev.asset == ev.asset and n_ev.class == ev.class then
                 if n_ev.event == "onAllTrade" then
-                    printTrade(n_ev)
+                    movedCount = movedCount + printTrade(n_ev)
                     table.remove(window, i)
                     i = i - 1
                     count = count - 1
@@ -108,9 +109,11 @@ end
 for line in io.stdin:lines() do
     local success, ev = pcall(q_persist.parseLine, line)
     if success then
+        ev.seq_num = seq_num
+        seq_num = seq_num + 1
         local t = getTimeOfDay(ev.time)
         if t and t > endAt then
-            io.stderr:write( string.format("Stopping at: %d (%d)", t, endAt) )
+            io.stderr:write( string.format("Stopping at: %d (%d)\n", t, endAt) )
             break
         end
         if ev.event == "onAllTrade" then
