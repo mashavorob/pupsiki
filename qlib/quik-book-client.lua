@@ -128,13 +128,13 @@ end
 function client:onQuoteChange(order, params, size)
     -- change reserve and limits
     local buydepo = params.BUYDEPO and tonumber(params.BUYDEPO.param_value)
-    local selldepo = params.SELLDEPO and tonumber(params.SELLDEPO.param_value)
+    local selldepo = params.SELDEPO and tonumber(params.SELDEPO.param_value)
     if buydepo and selldepo then
         buydepo = buydepo > 0 and buydepo or selldepo
         selldepo = selldepo > 0 and selldepo or buydepo
     end
     assert(buydepo, string.format("BUYDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
-    assert(selldepo, string.format("SELLDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
+    assert(selldepo, string.format("SELDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
 
     local limits = self:getFuturesLimits()
 
@@ -159,14 +159,14 @@ function client:onOrderFilled(order, price, diff)
     local params = self.book:getParams(order.CLASSCODE, order.SECCODE)
     
     local buydepo = params.BUYDEPO and tonumber(params.BUYDEPO.param_value)
-    local selldepo = params.SELLDEPO and tonumber(params.SELLDEPO.param_value)
+    local selldepo = params.SELDEPO and tonumber(params.SELDEPO.param_value)
     local exchpay = params.EXCH_PAY and tonumber(params.EXCH_PAY.param_value) or 0
     if buydepo and selldepo then
         buydepo = buydepo > 0 and buydepo or selldepo
         selldepo = selldepo > 0 and selldepo or buydepo
     end
     assert(buydepo, string.format("BUYDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
-    assert(selldepo, string.format("SELLDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
+    assert(selldepo, string.format("SELDEPO parameter is not defined for '%s':'%s'", order.CLASSCODE, order.SECCODE))
 
     local closeAmount = 0
     local openAmount = 0

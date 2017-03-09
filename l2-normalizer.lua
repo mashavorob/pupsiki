@@ -88,7 +88,7 @@ local function processLine(window)
             local n_ev = window[i]
             if n_ev.asset == ev.asset and n_ev.class == ev.class then
                 if n_ev.event == "onAllTrade" then
-                    movedCount = movedCount + printTrade(n_ev)
+                    printTrade(n_ev)
                     table.remove(window, i)
                     i = i - 1
                     count = count - 1

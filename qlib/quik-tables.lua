@@ -60,7 +60,7 @@ function q_tables:syncTables(books, params)
                     price = book.l2Snap.bid[book.l2Snap.bid_count].price
                 end
             elseif book.pos < 0 then
-                depo = depo - book.pos*params[class][asset].SELLDEPO.param_value
+                depo = depo - book.pos*params[class][asset].SELDEPO.param_value
                 if book.l2Snap.offer_count > 0 then
                     price = book.l2Snap.offer[1].price
                 end

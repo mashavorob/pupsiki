@@ -26,7 +26,6 @@ local jumpThreshold = 2
 
 local FWAverager = {}
 
-
 function FWAverager:moveNext(window)
     if #self.front then
         table.insert(self.back, self.front[1])
@@ -95,59 +94,44 @@ function Trend:onQuote(l2)
     ask_price = ask_price or bid_price
     local mid_price = ask_price and (ask_price + bid_price)/2
     self.mid_price = self.mid_price or mid_price
-    if self.mid_price and mid_price then
-        local trend = mid_price - self.mid_price
-        self.trend = self.trend + 1/(self.trendAvg + 1)*(trend - self.trend)
-        
-        self.trigger = self.trigger + 1/(self.sigmaAvg + 1)*(1 - self.trigger)
-        self.mid_price = self.mid_price + 1/(self.priceAvg + 1)*(mid_price - self.mid_price)
-       
-        local sigma = math.pow(trend, 2)
-        self.sigma = self.sigma + 1/(self.sigmaAvg + 1)*(sigma - self.sigma)
+    if not mid_price then
+        return
     end
+    
+    self.mid_price = self.mid_price + 1/(self.priceAvg + 1)*(mid_price - self.mid_price)
+
+    local trend = mid_price - self.mid_price
+    self.trend = self.trend + 1/(self.priceAvg2 + 1)*(trend - self.trend)
+
+    local trend2 = trend - self.trend
+    self.trend2 = self.trend2 + 1/(self.priceAvg2 + 1)*(trend2 - self.trend2)
+   
+    local sigma = math.pow(trend2, 2)
+    self.sigma = self.sigma + 1/(self.sigmaAvg + 1)*(sigma - self.sigma)
 end
 
-function Trend.create(priceAvg, sigmaAvg, jumpAvg)
+function Trend.create(priceAvg, priceAvg2, sigmaAvg)
     local self = { mid_price = nil
                  , sigma = 0
                  , trend = 0
+                 , trend2 = 0
                  , priceAvg = priceAvg
+                 , priceAvg2 = priceAvg2
                  , sigmaAvg = sigmaAvg
-                 , trendAvg = priceAvg
                  , trigger = 0
                  }
     setmetatable(self, {__index = Trend})
     return self
 end
 
-local counters = 
-    { SiH7 = { avg_bid = FWAverager.create('B', priceAvg)
-             , avg_ask = FWAverager.create('A', priceAvg)
-             , trend = Trend.create(200, 5000)
-             }
-    , BRH7 = { avg_bid = FWAverager.create('B', priceAvg)
-             , avg_ask = FWAverager.create('A', priceAvg)
-             , trend = Trend.create(2000, 5000)
-             }
-    }
-
-local si_avg_bid = counters.SiH7.avg_bid
-local si_avg_ask = counters.SiH7.avg_ask
-local si_trend   = counters.SiH7.trend
-
-local br_avg_bid = counters.BRH7.avg_bid
-local br_avg_ask = counters.BRH7.avg_ask
-local br_trend   = counters.BRH7.trend
+local avg_bid = FWAverager.create('B', priceAvg)
+local avg_ask = FWAverager.create('A', priceAvg)
+local trend = Trend.create(50, 50, 5000)
 
 local now = nil
 
 function processLine(window)
     local ev = window[1]
-
-    local cc = counters[ev.asset]
-    local avg_bid = cc.avg_bid
-    local avg_ask = cc.avg_ask
-    local trend   = cc.trend
 
     local t = ev.time or ev.received_time
     if t then
@@ -163,44 +147,28 @@ function processLine(window)
     table.remove(window, 1)
 
     if changed and now and 
-        si_trend.mid_price and br_trend.mid_price and
-        si_avg_bid.average > 0 and si_avg_ask.average > 0 and
-        br_avg_bid.average > 0 and br_avg_ask.average > 0
+        trend.mid_price and
+        avg_bid.average > 0 and avg_ask.average > 0
      then
         local ms = math.floor((now - math.floor(now))*1000)
         local timestamp = string.format("%s.%03d", os.date("%H:%M:%S", math.floor(now)), ms)
-        assert(br_trend.mid_price > 40)
         local data =
-            { si = { mid = (si_avg_bid.average + si_avg_ask.average)/2
-                   , price = si_trend.mid_price
-                   , up_price = si_trend.mid_price + math.sqrt(si_trend.sigma)*normThreshold
-                   , low_price = si_trend.mid_price - math.sqrt(si_trend.sigma)*normThreshold
-                   , up_bar = si_trend.mid_price + math.sqrt(si_trend.sigma)*jumpThreshold
-                   , low_bar = si_trend.mid_price - math.sqrt(si_trend.sigma)*jumpThreshold
-                   , trend = si_trend.trend
-                   }
-            , br = { mid = (br_avg_bid.average + br_avg_ask.average)/2
-                   , price = br_trend.mid_price
-                   , up_price = br_trend.mid_price + math.sqrt(br_trend.sigma)*normThreshold
-                   , low_price = br_trend.mid_price - math.sqrt(br_trend.sigma)*normThreshold
-                   , up_bar = math.sqrt(br_trend.sigma)*jumpThreshold
-                   , low_bar = -math.sqrt(br_trend.sigma)*jumpThreshold
-                   , trend = br_trend.trend
-                   }
+            { mid = (avg_bid.average + avg_ask.average)/2
+            , price = trend.mid_price
+            , up_price = math.sqrt(trend.sigma)*normThreshold
+            , low_price = -math.sqrt(trend.sigma)*normThreshold
+            , up_bar = math.sqrt(trend.sigma)*jumpThreshold
+            , low_bar = -math.sqrt(trend.sigma)*jumpThreshold
+            , trend = trend.trend
+            , trend2 = trend.trend2
             }
-        assert(br_avg_bid.average > 0)
-        assert(br_avg_ask.average > 0)
-        assert(data.br.mid > 40)
         print(string.format(
             "%12s " ..
-            -- mid    price  up-p    low-p   u-b     l-b      trend
-            "%15.03f %15.03f %15.03f %15.03f %15.03f %15.03f  %15.04f " ..
-            "%15.03f %15.03f %15.03f %15.03f %15.03f %15.03f  %15.04f"
+            -- mid    price  up-p    low-p   u-b     l-b      trend   trend2
+            "%15.03f %15.03f %15.03f %15.03f %15.03f %15.03f  %15.04f %15.04f"
             , timestamp
-            , data.si.mid, data.si.price
-            , data.si.up_price, data.si.low_price, data.si.up_bar, data.si.low_bar, data.si.trend
-            , data.br.mid, data.br.price
-            , data.br.up_price, data.br.low_price, data.br.up_bar, data.br.low_bar, data.br.trend
+            , data.mid, data.price
+            , data.up_price, data.low_price, data.up_bar, data.low_bar, data.trend, data.trend2
             ))
     end
 end
@@ -220,13 +188,10 @@ end
 print(string.format(
     "%12s " ..
     -- 2    3    4    5    6    7    8    9
-    "%15s %15s %15s %15s %15s %15s %15s " ..
-    "%15s %15s %15s %15s %15s %15s %15s"
+    "%15s %15s %15s %15s %15s %15s %15s %15s"
     , "time"
-    -- 2         3           4              5               6                 7                   8
-    , "si-mid", "si-price", "si-up-price", "si-low-price", "si-upper-barier", "si-lower-barier", "si-trend"
-    -- 9         10          11             12              13                14                  15
-    , "br-mid", "br-price", "br-up-price", "br-low-price", "br-upper-barier", "br-lower-barier", "br-trend"
+    -- 2      3        4           5            6               7               8        9
+    , "mid", "price", "up-price", "low-price", "upper-barier", "lower-barier", "trend", "trend2"
     ))
 
 local ln = 0

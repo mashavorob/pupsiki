@@ -163,7 +163,7 @@ function q_functor:runDay(day)
             local now = os.clock()
             simTime = rec.time or simTime
             if rec.time and not stopTime then
-                stopTime = rec.time + 3600 -- 1 hour of record
+                stopTime = q_stopAt:getTime(os.date('*t', rec.time))
             end
             if rec.time and rec.time > stopTime then
                 break
@@ -171,7 +171,7 @@ function q_functor:runDay(day)
             if rec.time and now >= reportTime + reportPeriod then
                 reportTime = now
                 local margin = self.client:getBalance(book) - balanceAtStart
-                io.stderr:write(string.format("processing %s, margin: %s\n", os.date('%Y%m%d-%H:%M:%S', rec.time), tostring(margin)))
+                io.stderr:write(string.format("processing %s, margin: %.0f\n", os.date('%Y%m%d-%H:%M:%S', rec.time), margin))
             end
             if not self.strategy and not headers[rec.event] then
                 self.strategy = self:createStrategy()
@@ -218,6 +218,8 @@ function q_functor:func()
         end
 
         if value > upper or value < lower then
+            print(string.format("parameter '%s' is out of range, value = %s, expected interval (%s, %s)",
+                info.name, tostring(value), tostring(lower), tostring(upper)))
             return 0
         end
     end

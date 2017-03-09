@@ -236,7 +236,7 @@ function runner.create(strategy, etc)
 
     local function updateDepoAndPrices()
         self.etc.depoBuy = getParamEx(self.etc.class, self.etc.asset, "BUYDEPO").param_value
-        self.etc.depoSell = getParamEx(self.etc.class, self.etc.asset, "SELLDEPO").param_value
+        self.etc.depoSell = getParamEx(self.etc.class, self.etc.asset, "SELDEPO").param_value
         self.etc.priceMin = getParamEx(self.etc.class, self.etc.asset, "PRICEMIN").param_value
         self.etc.priceMax = getParamEx(self.etc.class, self.etc.asset, "PRICEMAX").param_value
     end

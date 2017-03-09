@@ -14,16 +14,14 @@
 local q_config = require("qlib/quik-etc")
 local q_order = require("qlib/quik-order")
 local q_utils = require("qlib/quik-utils")
-local q_avg = require("qlib/quik-avg")
-
-assert(require("qlib/quik-time"))
+local q_time = require("qlib/quik-time")
 
 local q_averager = 
     { etc =  -- master configuration
         -- Главные параметры, задаваемые в ручную
-        { asset = "SiU6"                 -- бумага
+        { asset = "SiH7"                 -- бумага
         , class = "SPBFUT"               -- класс
-        , title = "qaverager - [SiM6]"   -- заголовок таблицы
+        , title = "qaverager - [SiH7]"   -- заголовок таблицы
 
         -- Параметры вычисляемые автоматически
         , account = "SPBFUT005eC"
@@ -31,57 +29,53 @@ local q_averager =
 
         , priceStepSize = 1              -- granularity of price (minimum price shift)
         , priceStepValue = 1             -- price of price step (price of minimal price shift)
-        , dealCost = 2                   -- биржевой сбор
+        , dealCost = 0.5                 -- биржевой сбор
 
         -- Параметры задаваемые вручную
-        , brokerComission = 0.4          -- коммисия брокера
+        , brokerComission = 1            -- коммисия брокера
         , absPositionLimit = 1           -- максимальная приемлемая позиция (абсолютное ограничение)
-        , relPositionLimit = 1           -- максимальная приемлемая позиция по отношению к размеру счета
+        , relPositionLimit = 0.6         -- максимальная приемлемая позиция по отношению к размеру счета
 
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot  = 30            -- коэффициент осреднения спот
-        , avgFactorTrend = 30            -- коэфициент осреднения тренда
-        , enterThreshold = 1e-7          -- порог чувствительности для входа в позицию
-        , exitThreshold  = 0             -- порог чувствительности для выхода из позиции
+        , avgFactorSpot   = 700           -- коэффициент осреднения спот
+        , avgFactorSigma  = 5000          -- коэфициент осреднения волатильности
+        , enterThreshold  = 0.7           -- порог чувствительности для входа в позицию
+        , cancelThreshold = 1.6           -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
-        , maxVolumeAheadAtEnter = 15
-        , maxLevelsAheadAtEnter = 3
-
-        , spread = 2                     -- Внимание: спред береться из соотвествующего файла:
+        , spread = 20                     -- Внимание: спред береться из соотвествующего файла:
                                          --     * pupsik-averager-si.lua,
                                          --     * pupsik-averager-ri.lua,
                                          --     * и так далее
                                          -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
 
-
         , avgFactorDelay = 20            -- коэффициент осреднения задержек Quik
 
         
         , params = 
-            { { name="avgFactorSpot",  min=1, max=1e32, step=50, precision=1 }
-            , { name="avgFactorTrend", min=1, max=1e32, step=50, precision=1 }
+            { { name="avgFactorSpot",  min=1, max=1e32, step=10, precision=1 }
+            , { name="avgFactorSigma", min=1, max=1e32, step=10, precision=1 }
             , { name="enterThreshold"
               , min=0
               , max=1e32
-              , get_min = function (func) 
-                    return func.exitThreshold
+              , get_max = function (func) 
+                    return func.cancelThreshold
                 end
-              , step=1e-5
-              , precision=1e-7 
+              , step=0.1
+              , precision=0.1
               }
-            , { name="exitThreshold"
+            , { name="cancelThreshold"
               , min=0
               , max=1e32
-              , get_max = function (func) 
+              , get_min = function (func) 
                     return func.enterThreshold
                 end
-              , step=1e-5
-              , precision=1e-7 
+              , step=0.1
+              , precision=0.1 
               }
-            , { name="spread", min=1, max=1e32, step=10, precision=1 }
+            , { name="spread", min=1, max=1e32, step=1, precision=1 }
             } 
         -- расписание работы
         , schedule = 
@@ -113,7 +107,7 @@ _G["quik-averager"] = q_averager
 local strategy = {}
 
 local HISTORY_TO_ANALYSE    = 30000
-local MIN_HISTORY           = 1000
+local MIN_HISTORY           = 300
 
 local PHASE_INIT                = 1
 local PHASE_WAIT                = 2
@@ -161,7 +155,8 @@ function q_averager.create(etc)
                 , offer = 0
                 , mid = 0
                 , avgMid = 0
-                , avgTrend = 0
+                , trend = 0
+                , trend2 = 0
                 , dev_2 = 0     -- deviation^2
                 , deviation = 0
                 }
@@ -223,9 +218,6 @@ function strategy:getLimit(absLimit, relLimit)
     assert(relLimit)
     local moneyLimit = q_utils.getMoneyLimit(self.etc.account)
     assert(moneyLimit)
-    -- Hack!!!!!
-    --moneyLimit = 20000
-    -- End of Hack!!!!!
     moneyLimit = moneyLimit*relLimit
     local buyLimit = math.floor(moneyLimit/q_utils.getBuyDepo(self.etc.class, self.etc.asset))
     local sellLimit = math.floor(moneyLimit/q_utils.getBuyDepo(self.etc.class, self.etc.asset))
@@ -285,9 +277,11 @@ function strategy:init()
                 , offer = 0
                 , mid = 0
                 , avgMid = 0
-                , avgTrend = 0
+                , trend = 0
+                , trend2 = 0
                 , dev_2 = 0     -- deviation^2
                 , deviation = 0
+                , trigger = 0
                 }
 
             , targetPos = 0
@@ -296,9 +290,9 @@ function strategy:init()
             , order = { }
             , take_profit = { } -- multiply orders
             , state = "--"
-            , count = -100
             }
     self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
+    self.state.refPrice = self.state.market.mid
 
     -- initial counters and position
     local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
@@ -321,15 +315,15 @@ function strategy:init()
     local etc = self.etc
 
     market.avgMid = false
-    market.avgTrend = 0
-    market.dev_2 = false
+    market.trend = 0
+    market.trend2 = 0
+    market.dev_2 = 0
 
     for i = first, n - 1 do
         local trade = getItem("all_trades", i)
         self.now = os.time(trade.datetime)
         if trade.sec_code == self.etc.asset and trade.class_code == self.etc.class and self:checkSchedule(self.now) then
             self:calcMarketParams(trade.price, trade.price)
-            self.state.count = self.state.count + 1
         end
     end
     Subscribe_Level_II_Quotes(self.etc.class, self.etc.asset)
@@ -337,45 +331,10 @@ function strategy:init()
     self:calcPlannedPos()
 end
 
-function strategy.getBidsBefore(l2, price)
-    local vol = 0
-    local count = 0
-    for j=0,l2.bid_count - 1 do
-        local i = l2.bid_count - j
-        local q = l2.bid[i]
-        if q.price <= price then
-            break
-        end
-        vol = vol + q.quantity
-        count = count + 1
-    end
-    return vol, count
-end
-
-function strategy.getOffersBefore(l2, price)
-    local vol = 0
-    local count = 0
-    for i=1,l2.offer_count do
-        local q = l2.offer[i]
-        if q.price >= price then
-            break
-        end
-        vol = vol + q.quantity
-        count = count + 1
-    end
-    return vol, count
-end
-
-function strategy.getVolumeBeforeOrder(l2, order)
-    if order.operation == 'B' then
-        return strategy.getBidsBefore(order.price)
-    end
-    return strategy.getOffersBefore(order.price)
-end
-
 function strategy:updatePosition()
 
     local state = self.state
+
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
 
     local tp_balance = 0 -- take profit balance
@@ -393,6 +352,8 @@ function strategy:updatePosition()
 
     -- check state
     if state.cancel or state.pause or state.halt then
+        self:Print("updatePosition() stop due to: state.cancel=%s state.pause=%s state.halt=%s",
+            tostring(state.cancel), tostring(state.pause), tostring(state.halt))
         return
     end
 
@@ -411,17 +372,17 @@ function strategy:updatePosition()
     local market = state.market
     local etc = self.etc
     local price = nil
+    local spread = etc.spread --math.ceil(market.deviation/etc.priceStepSize)*etc.priceStepSize
 
     if diff > 0 then
         -- try to sell with profit
-        price = math.max(state.order.price + etc.spread*etc.priceStepSize, market.offer - etc.priceStepSize)
-        --price = state.order.price + etc.spread*etc.priceStepSize
+        price = state.order.price + spread
     else
         -- try to buy with profit
-        price = math.min(state.order.price - etc.spread*etc.priceStepSize, market.bid + etc.priceStepSize)
-        --price = state.order.price - etc.spread*etc.priceStepSize
+        price = state.order.price - spread
     end
     
+    self:Print("fixing profit at %s %d@%f", (diff > 0) and 'SELL' or 'BUY', math.abs(diff), price)
     local res, err = order:send((diff > 0) and 'S' or 'B', price, math.abs(diff))
 
     if res then
@@ -467,11 +428,12 @@ function strategy:onTransReply(reply)
     if not status then 
         self.ui_state.lastError = err
     end
-    self:updatePosition()
     self:onMarketShift()
+    self:updatePosition()
 end
 
 function strategy:onTrade(trade)
+    self:Print(string.format("onTrade(%d@%f)", trade.qty, trade.price))
     self.now = os.time(trade.datetime)
     q_order.onTrade(trade)
     self:updatePosition()
@@ -489,7 +451,6 @@ function strategy:onAllTrade(trade)
     self.state.tradesDelayDev2 = self.state.tradesDelayDev2 or 0
     self.state.tradesDelayDev2 = self.state.tradesDelayDev2 + k*(sigma - self.state.tradesDelayDev2)
     self.state.tradesDelayDev = math.sqrt(self.state.tradesDelayDev2)
-    
 end
 
 function strategy:checkL2()
@@ -498,7 +459,6 @@ function strategy:checkL2()
         return false
     end
 
-    self.state.count = self.state.count + 1
     self:calcMarketParams(bid, offer, l2)
     return true
 end
@@ -554,7 +514,7 @@ function strategy:onIdle(now)
             elseif counters.position > 0 then
                 self.etc.minPrice = tonumber(getParamEx(self.etc.class, self.etc.asset, "PRICEMIN").param_value)
                 assert(self.etc.minPrice > 0, "Неверная минимальная цена: " .. self.etc.minPrice .. "\n" .. debug.traceback())
-                state.phase = PHASE_CANCEL
+                state.phase = HASE_CANCEL
                 local res, err = state.order:send("S", self.etc.minPrice, counters.position)
                 self:checkStatus(res, err)
                 return
@@ -566,8 +526,12 @@ function strategy:onIdle(now)
                 self:checkStatus(res, err)
                 return
             else
+                if state.phase ~= PHASE_WAIT then
+                    self:Print("switching to PHASE_WAIT")
+                end
                 state.phase = PHASE_WAIT
                 state.cancel = false
+
             end
         end
     end
@@ -612,10 +576,8 @@ function strategy:onIdle(now)
         return string.format(fmt, val)
     end
 
-    local trend = state.market.avgTrend or 0
-
     ui_state.spot = string.format(format, (state.market.avgMid or 0), formatVal(state.market.deviation))
-    ui_state.trend = formatVal(state.market.avgTrend)
+    ui_state.trend = formatVal(state.market.trend2)
 
     if self:checkSchedule() and isConnected() ~= 0 then
         local balance = self:calcBalance()
@@ -653,6 +615,7 @@ function strategy:onIdle(now)
     end
 
     ui_state.lastError = "--"
+    self:Print("onIdle(): ui_state.state='%s'", ui_state.state)
 end
 
 function strategy:getQuoteLevel2()
@@ -694,24 +657,29 @@ function strategy:calcMarketParams(bid, offer, l2)
     local mid = (bid + offer)/2
 
     local k1 = 1/(1 + etc.avgFactorSpot)
-    local k2 = 1/(1 + etc.avgFactorTrend)
+    local k2 = 1/(1 + etc.avgFactorSigma)
 
+    market.avgMid = market.avgMid or mid
+    
     market.mid = mid
-    market.avgMid = market.avgMid or market.mid
+    market.avgMid = market.avgMid + k1*(market.mid - market.avgMid)
+    
+    local trend = market.mid - market.avgMid
+    market.trend = market.trend + k1*(trend - market.trend)
+    
+    local trend2 = trend - market.trend
+    market.trend2 = market.trend2 + k1*(trend2 - market.trend2)
 
-    local trend = k1*(market.mid - market.avgMid)
-    market.avgMid = market.avgMid + trend
-    market.avgTrend = market.avgTrend + k2*(trend - market.avgTrend)
 
-    local dev_2 = math.pow(market.mid - market.avgMid, 2)
-    market.dev_2 = market.dev_2 or dev_2
-    market.dev_2 = market.dev_2 + k1*(dev_2 - market.dev_2)
+    local dev_2 = math.pow(trend, 2)
+    market.dev_2 = market.dev_2 + k2*(dev_2 - market.dev_2)
     market.deviation = math.sqrt(market.dev_2)
+
+    market.trigger = market.trigger + k2*(1 - market.trigger)
 end
 
 -- function returns operation, price
 function strategy:calcPlannedPos()
-
     local etc = self.etc
     local state = self.state
     local market = state.market
@@ -724,14 +692,21 @@ function strategy:calcPlannedPos()
                                         , loss
                                         , etc.maxLoss
                                         )
+        self:Print("calcPlannedPos(): exceed loss limit")
         return
     end
 
-    if self.state.count <= 0 then
+    if market.trigger <= 0.8 then
         self.state.state = "Недостаточно данных"
         return
     end
+    if not self.triggerReported then
+        self.triggerReported = true
+        self:Print("calcPlannedPos(): trigger activated")
+    end
     if state.halt or state.pause or state.cancel then
+        self:Print("calcPlannedPos(): state.halt=%s state.pause=%s state.cancel=%s",
+            tostring(state.halt), tostring(state.pause), tostring(state.cancel))
         return
     end
 
@@ -739,19 +714,12 @@ function strategy:calcPlannedPos()
         return
     end
 
-    if state.targetPos < 0 and market.avgTrend > -etc.exitThreshold then
-        state.targetPos = 0
-    elseif state.targetPos > 0 and market.avgTrend < etc.exitThreshold then
-        state.targetPos = 0
+    if market.trend2 > 0 then
+        state.targetPos = 1
+    elseif market.trend2 < 0 then
+        state.targetPos = -1
     end
 
-    if state.targetPos == 0 then
-        if market.avgTrend > etc.enterThreshold then
-            state.targetPos = 1
-        elseif market.avgTrend < -etc.enterThreshold then
-            state.targetPos = -1
-        end
-    end
     state.targetPos = state.targetPos*self:getLimit()
 end
 
@@ -780,25 +748,29 @@ function strategy:checkOrders()
     local pending = state.order:isPending()
     local active = state.order:isActive()
 
-    local minPrice, maxPrice
-
     for _, order in ipairs(state.take_profit) do
         pending = pending or order:isPending()
         if order:isActive() then
             active = true
-            if minPrice then
-                minPrice = math.min(minPrice, order.price)
-            else
-                minPrice = order.price
-            end
-            if maxPrice then
-                maxPrice = math.max(maxPrice, order.price)
-            else
-                maxPrice = order.price
-            end
         end
     end
     return pending, active
+end
+
+function strategy:Print(fmt, ...)
+--[[    local state = self.state
+    local market = state.market
+    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
+    local settleprice = market.mid--q_utils.getSettlePrice(self.etc.class, self.etc.asset)
+    local balance = counters.margin - counters.comission - counters.contracts*self.etc.brokerComission
+    balance = balance + counters.position*settleprice/self.etc.priceStepSize*self.etc.priceStepValue 
+    local now = quik_ext.gettime()
+    local ms = math.floor((now - math.floor(now))*1000)
+    local args = {...}
+
+    local preamble = string.format("%6.0f %s.%03d (%4.0f)", market.mid, os.date("%H:%M:%S", now), ms, balance)
+    local message = string.format(fmt, unpack(args))
+    print(string.format("%s: %s", preamble, message))]]
 end
 
 function strategy:onMarketShift()
@@ -809,6 +781,7 @@ function strategy:onMarketShift()
     
     -- check halts and pending orders
     if self.state.halt or self.state.cancel or self.state.pause then
+        self:Print("onMarketShift() exit due to halt cancel or pause")
         return
     end
 
@@ -817,46 +790,29 @@ function strategy:onMarketShift()
     if pending then
         return
     end
+    
+    prevPos = prevPos or 0
+    if state.targetPos ~= prevPos then
+        self:Print("onMarketShift(): state.targetPos = %s", tostring(state.targetPos))
+        prevPos = state.targetPos
+    end
 
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    local diff = state.targetPos - counters.position
-    local sellPrice = math.ceil(market.mid/etc.priceStepSize)*self.etc.priceStepSize
-    sellPrice = math.max(sellPrice, market.offer - self.etc.priceStepSize)
-    local buyPrice = math.floor(market.mid/etc.priceStepSize)*self.etc.priceStepSize
-    buyPrice = math.min(buyPrice, market.bid + self.etc.priceStepSize)
+    local diff = (state.targetPos - counters.position)
+    local price = state.order.price or market.mid
+    local sellPrice = market.offer 
+    local buyPrice = market.bid
+
+    local res, err = true, ""
 
     if active then
         state.phase = PHASE_WAIT
         state.state = "Ожидание исполнения ордера"
-        local res, err = true, ""
-        if diff > 0 and state.order.operation == 'B' then
-            -- check deviation (volume before own order, and count of populated price levels)
-            local vol, count = strategy.getBidsBefore(market.l2, state.order.price)
-            if state.order.price < buyPrice and
-                (vol > etc.maxVolumeAheadAtEnter or count > etc.maxLevelsAheadAtEnter)
-            then
-                -- price went too far, cancel the orders
-                res, err = self:killOrders()
-                state.phase = PHASE_CANCEL
-                state.state = "Отмена ордера из-за отклонения цены"
-                
-            end
-        elseif diff < 0 and state.order.operation == 'S' then
-            -- check deviation
-            -- check deviation (volume before own order, and count of populated price levels)
-            local vol, count = strategy.getOffersBefore(market.l2, state.order.price)
-            if state.order.price > sellPrice and
-                (vol > etc.maxVolumeAheadAtEnter or count > etc.maxLevelsAheadAtEnter)
-            then
-                -- price went too far, cancel the orders
-                res, err = self:killOrders()
-                state.phase = PHASE_CANCEL
-                state.state = "Отмена ордера из-за отклонения цены" 
-            end
-        elseif (diff > 0 and state.order.operation == 'S') or (diff < 0 and state.order.operation == 'B') then
+        if (diff > 0 and state.order.operation == 'S') or (diff < 0 and state.order.operation == 'B') then
             res, err = self:killOrders()
             state.phase = PHASE_CANCEL
-            state.state = "Отмена ордера из-за изменения тренда" 
+            state.state = "Отмена ордера из-за изменения тренда"
+            self:Print("Cancel order due to trend changing")
         end
         self:checkStatus(res, err)
         -- wait while the order is canceled
@@ -868,18 +824,17 @@ function strategy:onMarketShift()
         -- lot cannot be bigger
         local lotSize = math.min(math.abs(diff), self:getLimit(2*etc.absPositionLimit, 2*self.etc.relPositionLimit))
         local res, err = true, ""
-        if state.order:isDeactivating() then
-            -- discard deactivating order
-            state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-        end
         state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
         if diff < 0 then
+            self:Print("Enter short at: %d@%f", lotSize, sellPrice)
             state.state = (state.targetPos < 0) and "Открытие шорт" or "Закрытие лонг"
             res, err = state.order:send('S', sellPrice, lotSize)
         else
+            self:Print("Enter long at: %d@%f", lotSize, buyPrice)
             state.state = (state.targetPos > 0) and "Открытие лонг" or "Закрыте шорт"
             res, err = state.order:send('B', buyPrice, lotSize)
         end
+        state.refPrice = market.mid
         self:checkStatus(res, err)
     else
         state.state = "Удержание позиции"
@@ -902,6 +857,8 @@ function strategy:checkStatus(status, err)
 end
 
 function strategy:killPosition()
+    self:Print("killPosition()")
+    assert(false)
     self.state.cancel = true
 end
 

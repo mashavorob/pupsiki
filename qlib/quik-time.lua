@@ -12,7 +12,7 @@
 ]]
 
 
-q_time = {}
+local q_time = {}
 
 local q_timestamp = {}
 local q_interval  = {}
@@ -70,3 +70,5 @@ function q_interval:getTimeLeft(now)
     local today = os.date("*t", now)
     return self.to:getTime(today) - now
 end
+
+return q_time

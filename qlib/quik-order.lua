@@ -236,7 +236,7 @@ end
 function order:kill()
     assert(self.class and self.asset and self.trans_id and self.order_num and self:isActive() and not self:isPending(), 
         "order has not been sent yet\n" .. debug.traceback())
-    local now = os.time()
+    local now = quik_ext.gettime()
     local lastKill = self.lastKill or 0
     if now - lastKill < 5 then
         return true

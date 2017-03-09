@@ -16,9 +16,9 @@ local etc =
     , firmid  =  "==SPBFUT589000"
     , sname   = "quik-averager"
 
-    , asset   = 'SiU6'
+    , asset   = 'SiH7'
     , class   = "SPBFUT"
-    , spread  = 2   -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
+    , spread  = 20   -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
     }
 
 local scriptFolder = false
