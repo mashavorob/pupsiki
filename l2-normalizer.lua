@@ -109,6 +109,14 @@ end
 for line in io.stdin:lines() do
     local success, ev = pcall(q_persist.parseLine, line)
     if success then
+        -- workaraounds for bugs
+        if ev.event == "onParams" then
+            ev.params.SELDEPO = ev.params.SELDEPO or ev.params.BUYDEPO
+            for _,p in pairs(ev.params) do
+                p.param_image = nil
+            end
+        end
+
         ev.seq_num = seq_num
         seq_num = seq_num + 1
         local t = getTimeOfDay(ev.time)
