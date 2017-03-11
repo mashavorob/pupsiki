@@ -17,7 +17,7 @@ local q_book = require("qlib/quik-book-II")
 local q_persist = require("qlib/quik-l2-persist")
 local q_client = require("qlib/quik-book-client")
 local q_utils = require("qlib/quik-utils")
-local ProFi = require("ProFi")
+--local ProFi = require("ProFi")
 local simTime = 0
 local simTransId = 1000000
 
@@ -186,8 +186,8 @@ function q_functor:runDay(day)
     end
     file:close()
     
-    ProFi:stop()
-    ProFi:writeReport()
+    --ProFi:stop()
+    --ProFi:writeReport()
 
     local margin = self.client:getBalance(book) - balanceAtStart
 
