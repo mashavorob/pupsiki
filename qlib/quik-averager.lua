@@ -39,19 +39,21 @@ local q_averager =
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot   = 700           -- коэффициент осреднения спот
+        , avgFactorSpot   = 600           -- коэффициент осреднения спот
         , avgFactorSigma  = 5000          -- коэфициент осреднения волатильности
         , enterThreshold  = 0.7           -- порог чувствительности для входа в позицию
         , cancelThreshold = 1.6           -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
-        , spread = 20                     -- Внимание: спред береться из соотвествующего файла:
-                                         --     * pupsik-averager-si.lua,
-                                         --     * pupsik-averager-ri.lua,
-                                         --     * и так далее
-                                         -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
+        , spread = 35                     -- Внимание: спред береться из соотвествующего файла:
+                                          --     * pupsik-averager-si.lua,
+                                          --     * pupsik-averager-ri.lua,
+                                          --     * и так далее
+                                          -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
+                                          
+        , enterSpread = 3                 -- отступ от края стакана для открытия позиции
 
-        , avgFactorDelay = 20            -- коэффициент осреднения задержек Quik
+        , avgFactorDelay = 20             -- коэффициент осреднения задержек Quik
 
         
         , params = 
@@ -76,6 +78,7 @@ local q_averager =
               , precision=0.1 
               }
             , { name="spread", min=1, max=1e32, step=1, precision=1 }
+            , { name="enterSpread", min=1, max=1e32, step=1, precision=1 }
             } 
         -- расписание работы
         , schedule = 
@@ -372,7 +375,7 @@ function strategy:updatePosition()
     local market = state.market
     local etc = self.etc
     local price = nil
-    local spread = etc.spread --math.ceil(market.deviation/etc.priceStepSize)*etc.priceStepSize
+    local spread = etc.spread*etc.priceStepSize --math.ceil(market.deviation/etc.priceStepSize)*etc.priceStepSize
 
     if diff > 0 then
         -- try to sell with profit
@@ -675,7 +678,7 @@ function strategy:calcMarketParams(bid, offer, l2)
     market.dev_2 = market.dev_2 + k2*(dev_2 - market.dev_2)
     market.deviation = math.sqrt(market.dev_2)
 
-    market.trigger = market.trigger + k2*(1 - market.trigger)
+    market.trigger = market.trigger + k1*(1 - market.trigger)
 end
 
 -- function returns operation, price
@@ -696,7 +699,7 @@ function strategy:calcPlannedPos()
         return
     end
 
-    if market.trigger <= 0.8 then
+    if market.trigger <= 0.5 then
         self.state.state = "Недостаточно данных"
         return
     end
@@ -800,8 +803,9 @@ function strategy:onMarketShift()
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     local diff = (state.targetPos - counters.position)
     local price = state.order.price or market.mid
-    local sellPrice = market.offer 
-    local buyPrice = market.bid
+    local enterSpread = etc.enterSpread*etc.priceStepSize
+    local sellPrice = market.offer + enterSpread
+    local buyPrice = market.bid - enterSpread
 
     local res, err = true, ""
 
@@ -837,7 +841,7 @@ function strategy:onMarketShift()
         state.refPrice = market.mid
         self:checkStatus(res, err)
     else
-        state.state = "Удержание позиции"
+        state.state = string.format("%.3f Удержание позиции", market.trigger)
     end
 end
 

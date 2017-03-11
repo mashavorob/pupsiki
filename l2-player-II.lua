@@ -17,16 +17,19 @@ local helpMessage = [[
 l2-player-II is for playback previously recorded market data and optimize strategies' parameters
 Usage:
 
-%s <operation> <options> <strategy> <log-file> [log-file] ... [log-file]
+%s [options] <operation> <op-options> <strategy> <log-file> [log-file] ... [log-file]
 
 Where
+    [options] - list of optional parameters:
+            -eod <HH:MM> - specifies end of day time in 24h format to run or probe. Default value is 19:00
+            -fee <num> - specifies broker fee. Default value is 2.00
+        
     <operation> could be:
     run         - run specified strategy
     probe       - probe different values of a parameter
     --help,/?   - show this message
     
-    <options>   - depend on command, see details:
-            -eod HH:MM - specifies end of day time in 24h format (default value is 19:00) to run or probe
+    <op-options>   - depend on command, see details:
             -param <parameter> <from> <to> <step> - specifies name and range for parameter to probe
                                                     it is possible to specify many '-param' options
 ]]
@@ -38,6 +41,7 @@ local q_time = require("qlib/quik-time")
 
 -- global variables
 q_stopAt = q_time.at("19:00")
+g_brokerFee = 2
 
 print("")
 print("Level 2 Market Data Player II (c) 2016, 2017")
@@ -55,21 +59,6 @@ local function printHelpAndExit(code)
     os.exit(code)
 end
 
-local function parseEodArg(i)
-    local eod = arg[i + 1]
-    if not eod then
-        io.stderr:write("Time is not specified for parameter '-eod'\n")
-        printHelpAndExit(1)
-    end
-    local success, t = pcall(q_time.at, eod)
-    if not success then
-        io.stderr:write(string.format("Time '%s' for parameter '-eod' specified incorrectly, HH:MM is expected\n", eod))
-        printHelpAndExit(1)
-    end
-    q_stopAt = t        
-    return i + 2
-end
-
 local function parseArgs()
     local numArgs = #arg
 
@@ -79,16 +68,53 @@ local function parseArgs()
         io.stderr:write("At least 3 arguments are expected\n")
         printHelpAndExit(1)
     end
-    local op, i = arg[1], 2
+
+    local i = 1
+
+    while i < numArgs do
+        if arg[i] == '-eod' then
+            local eod = arg[i + 1]
+            if not eod then
+                io.stderr:write("*error: Time is not specified for parameter '-eod'\n\n")
+                printHelpAndExit(1)
+            end
+            local success, t = pcall(q_time.at, eod)
+            if not success then
+                io.stderr:write(string.format("*error: Time '%s' for parameter '-eod' specified incorrectly, HH:MM is expected\n\n", eod))
+                printHelpAndExit(1)
+            end
+            q_stopAt = t        
+            i = i + 2
+        elseif arg[i] == '-fee' then
+            local s = arg[i + 1]
+            if not s then
+                io.stderr:write("*error: Value is not specified for parameter '-fee'\n\n")
+                printHelpAndExit(1)
+            end
+            local val = tonumber(s)
+            if not val or val < 0 then
+                io.stderr:write(string.format(
+                    "*error: Broker fee specified incorrectly, non negative floating point number is expected but '%s' specified\n\n", s))
+                printHelpAndExit(1)
+            end
+            g_brokerFee = val
+            i = i + 2
+        else
+            break
+        end
+    end
+
+    local op = arg[i]
     local options = {}
+    i = i + 1
 
     if op == 'probe' then
 
         local asNum = function(name, value)
             local num = tonumber(value)
             if not num then
-                io.stderr:write("Incorrect value is specified for parameter '" .. name .. "'\n")
-                io.stderr:write("Number is expected, but found '" .. (value or 'nothing') .. "'\n")
+                io.stderr:write("*error: Incorrect value is specified for parameter '" .. name .. "'\n")
+                io.stderr:write("        Number is expected, but found '" .. (value or 'nothing') .. "'\n\n")
                 printHelpAndExit(1)
             end
             return num
@@ -98,38 +124,28 @@ local function parseArgs()
             if arg[i] == '-param' then
                 local name, from, to, step = arg[i+1], asNum('<from>', arg[i+2]), asNum('<to>', arg[i+3]), asNum('<step>', arg[i+4])
                 if not name then
-                    io.stderr:write("Parameter name is not specified for '-param' option\n")
+                    io.stderr:write("*error: Parameter name is not specified for '-param' option\n\n")
                     printHelpAndExit(1)
                 end
                 if step <= 0 then
-                    io.stderr:write("Positive value is expected for '<step>' parameter\n")
+                    io.stderr:write("*error: Positive value is expected for '<step>' parameter\n\n")
                     printHelpAndExit(1)
                 end
                 if from > to then
-                    io.stderr:write("Value of '<from>' parameter must be strictly less then value of '<to>' parameter\n")
+                    io.stderr:write("*error: Value of '<from>' parameter must be strictly less then value of '<to>' parameter\\nn")
                     printHelpAndExit(1)
                 end
 
                 table.insert(options, { param=name, from=from, to=to, step=step })
                 i = i + 5
-            elseif arg[i] == '-eod' then
-                i = parseEodArg(i)
             else
                 break
             end
         end
 
         if #options < 1 then
-            io.stderr:write("at least one '-param' option must be specifed for probe\n")
+            io.stderr:write("*error: at least one '-param' option must be specifed for probe\n\n")
             printHelpAndExit(1)
-        end
-    else
-        while i < numArgs do
-            if arg[i] == '-eod' then
-                i = parseEodArg(i)
-            else
-                break
-            end
         end
     end
 

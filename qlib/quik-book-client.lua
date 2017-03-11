@@ -170,6 +170,7 @@ function client:onOrderFilled(order, price, diff)
 
     local closeAmount = 0
     local openAmount = 0
+    local numOfContracts = math.abs(diff)
 
     if diff*holdings.totalnet < 0 then
         closeAmount = math.min(math.abs(holdings.totalnet), math.abs(diff))
@@ -181,7 +182,7 @@ function client:onOrderFilled(order, price, diff)
 
     local moneyToRelease = closeAmount*(holdings.totalnet > 0 and buydepo or selldepo)
     local moneyToReserve = openAmount*(diff > 0 and buydepo or selldepo)
-    local moneyToPay = openAmount*exchpay
+    local moneyToPay = openAmount*exchpay + numOfContracts*g_brokerFee
     -- sold means reduced position(negative diff) and positive income
     -- bought means increased position(positive diff) and negative income (reduced balance)
     local cashflow = -price*diff - moneyToPay
