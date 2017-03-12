@@ -12,13 +12,14 @@
 ]]
 
 local etc = 
-    { account = "==SPBFUT005eC"
-    , firmid  =  "==SPBFUT589000"
-    , sname   = "quik-averager"
+    { account           = "==SPBFUT005eC"
+    , firmid            =  "==SPBFUT589000"
+    , sname             = "quik-averager"
 
-    , asset   = 'SiH7'
-    , class   = "SPBFUT"
-    , spread  = 20   -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
+    , asset             = 'SiH7'
+    , class             = "SPBFUT"
+    , avgFactorSpot     = 690  -- коэффициент осреднения спот
+    , spread            = 39   -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
     }
 
 local scriptFolder = false
