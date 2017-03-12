@@ -77,8 +77,8 @@ local q_averager =
               , step=0.1
               , precision=0.1 
               }
-            , { name="spread", min=1, max=1e32, step=1, precision=1 }
-            , { name="enterSpread", min=1, max=1e32, step=1, precision=1 }
+            , { name="spread", min=0, max=1e32, step=1, precision=1 }
+            , { name="enterSpread", min=0, max=1e32, step=1, precision=1 }
             } 
         -- расписание работы
         , schedule = 
