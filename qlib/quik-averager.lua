@@ -45,12 +45,6 @@ local q_averager =
         , cancelThreshold = 1.6           -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
-        , spread = 39                     -- Внимание: спред береться из соотвествующего файла:
-                                          --     * pupsik-averager-si.lua,
-                                          --     * pupsik-averager-ri.lua,
-                                          --     * и так далее
-                                          -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
-                                          
         , enterSpread = 3                 -- отступ от края стакана для открытия позиции
 
         , avgFactorDelay = 20             -- коэффициент осреднения задержек Quik
@@ -77,7 +71,6 @@ local q_averager =
               , step=0.1
               , precision=0.1 
               }
-            , { name="spread", min=0, max=1e32, step=1, precision=1 }
             , { name="enterSpread", min=0, max=1e32, step=1, precision=1 }
             } 
         -- расписание работы
@@ -168,7 +161,6 @@ function q_averager.create(etc)
             , position = 0
             
             , order = { }
-            , take_profit = { } -- multiply orders
             , state = "--"
             , count = -100
             }
@@ -291,7 +283,6 @@ function strategy:init()
             , position = 0
             
             , order = { }
-            , take_profit = { } -- multiply orders
             , state = "--"
             }
     self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
@@ -334,67 +325,6 @@ function strategy:init()
     self:calcPlannedPos()
 end
 
-function strategy:updatePosition()
-
-    local state = self.state
-
-    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-
-    local tp_balance = 0 -- take profit balance
-    
-    -- update position
-    for i,order in ipairs(state.take_profit) do
-        if order:isActive() or order:isPending() then
-            if order.operation == 'B' then
-                tp_balance = tp_balance + order.balance
-            else
-                tp_balance = tp_balance - order.balance
-            end
-        end
-    end
-
-    -- check state
-    if state.cancel or state.pause or state.halt then
-        self:Print("updatePosition() stop due to: state.cancel=%s state.pause=%s state.halt=%s",
-            tostring(state.cancel), tostring(state.pause), tostring(state.halt))
-        return
-    end
-
-    -- position is being changed, there is no need to create take-profit orders
-    if counters.position*state.targetPos <= 0 then
-        return
-    end
-
-    -- create take profit orders to neitralize bought/sold orders
-    local diff = counters.position + tp_balance
-    if diff == 0 then
-        return
-    end
-
-    local order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-    local market = state.market
-    local etc = self.etc
-    local price = nil
-    local spread = etc.spread*etc.priceStepSize --math.ceil(market.deviation/etc.priceStepSize)*etc.priceStepSize
-
-    if diff > 0 then
-        -- try to sell with profit
-        price = state.order.price + spread
-    else
-        -- try to buy with profit
-        price = state.order.price - spread
-    end
-    
-    self:Print("fixing profit at %s %d@%f", (diff > 0) and 'SELL' or 'BUY', math.abs(diff), price)
-    local res, err = order:send((diff > 0) and 'S' or 'B', price, math.abs(diff))
-
-    if res then
-        table.insert(state.take_profit, order)
-    end
-    state.state = "Реализация позиции"
-    self:checkStatus(res, err)
-end
-
 function strategy:onStartTrading()
     self.state.pause = false
     self.state.halt = false
@@ -432,14 +362,12 @@ function strategy:onTransReply(reply)
         self.ui_state.lastError = err
     end
     self:onMarketShift()
-    self:updatePosition()
 end
 
 function strategy:onTrade(trade)
     self:Print(string.format("onTrade(%d@%f)", trade.qty, trade.price))
     self.now = os.time(trade.datetime)
     q_order.onTrade(trade)
-    self:updatePosition()
 end
 
 function strategy:onAllTrade(trade)
@@ -483,7 +411,6 @@ function strategy:onIdle(now)
 
     self.now = quik_ext.gettime()
     q_order.onIdle()
-    self:updatePosition()
     self:onMarketShift()
 
     local state = self.state
@@ -733,15 +660,6 @@ function strategy:killOrders()
     if state.order:isActive() then
         res, err = state.order:kill()
     end
-
-    for _,order in ipairs(state.take_profit) do
-        if order:isActive() then
-            local tp_res, tp_err = order:kill()
-            if not tp_res and res then
-                res, err = tp_res, tp_err
-            end
-        end
-    end
     return res, err
 end
 
@@ -750,13 +668,6 @@ function strategy:checkOrders()
 
     local pending = state.order:isPending()
     local active = state.order:isActive()
-
-    for _, order in ipairs(state.take_profit) do
-        pending = pending or order:isPending()
-        if order:isActive() then
-            active = true
-        end
-    end
     return pending, active
 end
 
@@ -822,7 +733,6 @@ function strategy:onMarketShift()
         -- wait while the order is canceled
         return
     elseif diff ~= 0 then
-        state.take_profit = {} -- discard inactive take-profit orders
         state.phase = PHASE_WAIT
         state.state = "Отправка ордера"
         -- lot cannot be bigger

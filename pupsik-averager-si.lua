@@ -13,7 +13,7 @@
 
 local etc = 
     { account           = "==SPBFUT005eC"
-    , firmid            =  "==SPBFUT589000"
+    , firmid            = "==SPBFUT589000"
     , sname             = "quik-averager"
 
     , asset             = 'SiH7'
