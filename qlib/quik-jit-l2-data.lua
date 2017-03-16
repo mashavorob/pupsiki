@@ -282,7 +282,7 @@ function ffi_pool:append(item)
     elseif item.event == "onQuote" then
         local record = self:appendRecord()
         record.itemType = self.onQuote
-        record.u.book.time_stamp = item.tstamp or item.time
+        record.u.book.time_stamp = item.tstamp or item.time or item.received_time
         record.u.book.class = self:getIndexFromString(item.class)
         record.u.book.asset = self:getIndexFromString(item.asset)
         self.storeBook(item.l2, record.u.book)

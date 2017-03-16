@@ -161,17 +161,18 @@ function q_functor:runDay(day)
         local success, rec = pcall(q_persist.parseLine, line)
         if success then
             local now = os.clock()
-            simTime = rec.time or simTime
-            if rec.time and not stopTime then
-                stopTime = q_stopAt:getTime(os.date('*t', rec.time))
+            local rec_time = rec.time or rec.received_time
+            simTime = rec_time or simTime
+            if rec_time and not stopTime then
+                stopTime = q_stopAt:getTime(os.date('*t', rec_time))
             end
-            if rec.time and rec.time > stopTime then
+            if rec_time and rec_time > stopTime then
                 break
             end
-            if rec.time and now >= reportTime + reportPeriod then
+            if rec_time and now >= reportTime + reportPeriod then
                 reportTime = now
                 local margin = self.client:getBalance(book) - balanceAtStart
-                io.stderr:write(string.format("processing %s, margin: %.0f\n", os.date('%Y%m%d-%H:%M:%S', rec.time), margin))
+                io.stderr:write(string.format("processing %s, margin: %.0f\n", os.date('%Y%m%d-%H:%M:%S', rec_time), margin))
             end
             if not self.strategy and not headers[rec.event] then
                 self.strategy = self:createStrategy()

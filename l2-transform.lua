@@ -36,7 +36,8 @@ local function formatTime(t)
 end
 
 local function onQuote(event)
-    local recTm = event.time and formatTime(event.time) or "<NA>"
+    local event_time = event.time or event.received_time
+    local recTm = event_time and formatTime(event_time) or "<NA>"
     local bid = event.l2.bid or {}
     local ask = event.l2.offer or {}
     print( string.format("q: %s %s = %s", recTm, quotesToStr(bid, -5), quotesToStr(ask, 5)) )

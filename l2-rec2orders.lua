@@ -69,7 +69,7 @@ local function canWait(t_ev, window)
     for i=1,#window do
         local q_ev = window[i]
         if q_ev.event == "onQuote" then
-            local q_time = q_ev.time 
+            local q_time = q_ev.time or q_ev.received_time 
             if q_time - t_time > maxTradeDelay then
                 return false
             end
@@ -263,7 +263,7 @@ end
 local lastQuote = false 
 
 local function onQuote(event)
-    lastQuote = event.time
+    lastQuote = event.time or event.received_time
     local newBook = event.l2
     local oldBook = getBook(event)
     onBook(event, oldBook, newBook)

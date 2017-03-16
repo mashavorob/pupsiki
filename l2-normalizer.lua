@@ -119,7 +119,7 @@ for line in io.stdin:lines() do
 
         ev.seq_num = seq_num
         seq_num = seq_num + 1
-        local t = getTimeOfDay(ev.time)
+        local t = getTimeOfDay(ev.time or ev.received_time)
         if t and t > endAt then
             io.stderr:write( string.format("Stopping at: %d (%d)\n", t, endAt) )
             break
