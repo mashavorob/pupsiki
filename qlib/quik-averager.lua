@@ -39,39 +39,19 @@ local q_averager =
         , maxLoss = 1000                 -- максимальная приемлимая потеря
 
         -- Параметры стратегии
-        , avgFactorSpot   = 690           -- коэффициент осреднения спот
-        , avgFactorSigma  = 5000          -- коэфициент осреднения волатильности
-        , enterThreshold  = 0.7           -- порог чувствительности для входа в позицию
-        , cancelThreshold = 1.6           -- порог чувствительности для выхода из позиции
+        , avgFactorSpot   = 1400         -- коэффициент осреднения спот
+        , avgFactorTrend2 = 1000         -- коэфициент осреднения волатильности
 
         -- Вспомогательные параметры
-        , enterSpread = 3                 -- отступ от края стакана для открытия позиции
+        , enterSpread = -1               -- отступ от края стакана для открытия позиции
 
-        , avgFactorDelay = 20             -- коэффициент осреднения задержек Quik
+        , avgFactorDelay = 20            -- коэффициент осреднения задержек Quik
 
         
         , params = 
-            { { name="avgFactorSpot",  min=1, max=1e32, step=10, precision=1 }
-            , { name="avgFactorSigma", min=1, max=1e32, step=10, precision=1 }
-            , { name="enterThreshold"
-              , min=0
-              , max=1e32
-              , get_max = function (func) 
-                    return func.cancelThreshold
-                end
-              , step=0.1
-              , precision=0.1
-              }
-            , { name="cancelThreshold"
-              , min=0
-              , max=1e32
-              , get_min = function (func) 
-                    return func.enterThreshold
-                end
-              , step=0.1
-              , precision=0.1 
-              }
-            , { name="enterSpread", min=0, max=1e32, step=1, precision=1 }
+            { { name="avgFactorSpot",   min=1, max=1e32, step=10, precision=1 }
+            , { name="avgFactorTrend2", min=1, max=1e32, step=10, precision=1 }
+            , { name="enterSpread", min=-100, max=100, step=1, precision=1 }
             } 
         -- расписание работы
         , schedule = 
@@ -111,6 +91,8 @@ local PHASE_HOLD                = 3
 local PHASE_CLOSE               = 4
 local PHASE_PRICE_CHANGE        = 5
 local PHASE_CANCEL              = 6
+
+local WAIT_UNTIL = 0.5
 
 function q_averager.create(etc)
 
@@ -153,8 +135,7 @@ function q_averager.create(etc)
                 , avgMid = 0
                 , trend = 0
                 , trend2 = 0
-                , dev_2 = 0     -- deviation^2
-                , deviation = 0
+                , trigger = 0
                 }
 
             , targetPos = 0
@@ -274,8 +255,6 @@ function strategy:init()
                 , avgMid = 0
                 , trend = 0
                 , trend2 = 0
-                , dev_2 = 0     -- deviation^2
-                , deviation = 0
                 , trigger = 0
                 }
 
@@ -301,25 +280,6 @@ function strategy:init()
 
     self:updateParams()
 
-    -- walk through all trade
-    local n = getNumberOf("all_trades")
-    local first = math.max(0, n - HISTORY_TO_ANALYSE)
-
-    local market = self.state.market
-    local etc = self.etc
-
-    market.avgMid = false
-    market.trend = 0
-    market.trend2 = 0
-    market.dev_2 = 0
-
-    for i = first, n - 1 do
-        local trade = getItem("all_trades", i)
-        self.now = os.time(trade.datetime)
-        if trade.sec_code == self.etc.asset and trade.class_code == self.etc.class and self:checkSchedule(self.now) then
-            self:calcMarketParams(trade.price, trade.price)
-        end
-    end
     Subscribe_Level_II_Quotes(self.etc.class, self.etc.asset)
     self.state.phase = PHASE_WAIT
     self:calcPlannedPos()
@@ -468,22 +428,6 @@ function strategy:onIdle(now)
 
     ui_state.position = counters.position
     ui_state.targetPos = state.targetPos
-    local format = "%.0f /%s"
-    if self.etc.priceStepSize < 1e-6 then
-        format = "%0.8f /%s"
-    elseif self.etc.priceStepSize < 1e-5 then
-        format = "%0.7f /%s"
-    elseif self.etc.priceStepSize < 1e-4 then
-        format = "%0.6f /%s"
-    elseif self.etc.priceStepSize < 1e-3 then
-        format = "%0.5f /%s"
-    elseif self.etc.priceStepSize < 1e-2 then
-        format = "%0.4f /%s"
-    elseif self.etc.priceStepSize < 1e-1 then
-        format = "%0.3f /%s"
-    elseif self.etc.priceStepSize < 1 then
-        format = "%0.2f / %s"
-    end
 
     local function formatVal(val)
         val = val or 0
@@ -506,7 +450,24 @@ function strategy:onIdle(now)
         return string.format(fmt, val)
     end
 
-    ui_state.spot = string.format(format, (state.market.avgMid or 0), formatVal(state.market.deviation))
+    local format = "%.0f"
+    if self.etc.priceStepSize < 1e-6 then
+        format = "%0.8f"
+    elseif self.etc.priceStepSize < 1e-5 then
+        format = "%0.7f"
+    elseif self.etc.priceStepSize < 1e-4 then
+        format = "%0.6f"
+    elseif self.etc.priceStepSize < 1e-3 then
+        format = "%0.5f"
+    elseif self.etc.priceStepSize < 1e-2 then
+        format = "%0.4f"
+    elseif self.etc.priceStepSize < 1e-1 then
+        format = "%0.3f"
+    elseif self.etc.priceStepSize < 1 then
+        format = "%0.2f"
+    end
+
+ui_state.spot = string.format(format, (state.market.avgMid or 0))
     ui_state.trend = formatVal(state.market.trend2)
 
     if self:checkSchedule() and isConnected() ~= 0 then
@@ -587,7 +548,8 @@ function strategy:calcMarketParams(bid, offer, l2)
     local mid = (bid + offer)/2
 
     local k1 = 1/(1 + etc.avgFactorSpot)
-    local k2 = 1/(1 + etc.avgFactorSigma)
+    local k2 = 1/(1 + etc.avgFactorTrend2)
+    local k = math.min(k1, k2)
 
     market.avgMid = market.avgMid or mid
     
@@ -598,14 +560,9 @@ function strategy:calcMarketParams(bid, offer, l2)
     market.trend = market.trend + k1*(trend - market.trend)
     
     local trend2 = trend - market.trend
-    market.trend2 = market.trend2 + k1*(trend2 - market.trend2)
+    market.trend2 = market.trend2 + k2*(trend2 - market.trend2)
 
-
-    local dev_2 = math.pow(trend, 2)
-    market.dev_2 = market.dev_2 + k2*(dev_2 - market.dev_2)
-    market.deviation = math.sqrt(market.dev_2)
-
-    market.trigger = market.trigger + k1*(1 - market.trigger)
+    market.trigger = market.trigger + k*(1 - market.trigger)
 end
 
 -- function returns operation, price
@@ -626,7 +583,7 @@ function strategy:calcPlannedPos()
         return
     end
 
-    if market.trigger <= 0.5 then
+    if market.trigger <= WAIT_UNTIL then
         self.state.state = "Недостаточно данных"
         return
     end
@@ -672,7 +629,8 @@ function strategy:checkOrders()
 end
 
 function strategy:Print(fmt, ...)
---[[    local state = self.state
+    --[[
+    local state = self.state
     local market = state.market
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     local settleprice = market.mid--q_utils.getSettlePrice(self.etc.class, self.etc.asset)
@@ -682,9 +640,27 @@ function strategy:Print(fmt, ...)
     local ms = math.floor((now - math.floor(now))*1000)
     local args = {...}
 
-    local preamble = string.format("%6.0f %s.%03d (%4.0f)", market.mid, os.date("%H:%M:%S", now), ms, balance)
+    local preamble = string.format("%6.0f %s.%03d (%4.0f, %2d)", market.mid, os.date("%H:%M:%S", now), ms, balance, counters.position)
     local message = string.format(fmt, unpack(args))
-    print(string.format("%s: %s", preamble, message))]]
+    print(string.format("%s: %s", preamble, message))
+    ]]
+end
+
+function strategy:calcSpread(spread)
+    local etc = self.etc
+    local market = self.state.market
+    local buyPrice, sellPrice = 0, 0
+    if spread == 0 then
+        buyPrice = math.floor(market.mid/etc.priceStepSize)*etc.priceStepSize
+        sellPrice = math.ceil(market.mid/etc.priceStepSize)*etc.priceStepSize
+    elseif spread < 0 then
+        buyPrice = market.offer - (spread + 1)*etc.priceStepSize
+        sellPrice = market.bid + (spread + 1)*etc.priceStepSize
+    else
+        buyPrice = market.bid - (spread - 1)*etc.priceStepSize
+        sellPrice = market.offer + (spread - 1)*etc.priceStepSize
+    end
+    return buyPrice, sellPrice
 end
 
 function strategy:onMarketShift()
@@ -714,16 +690,14 @@ function strategy:onMarketShift()
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     local diff = (state.targetPos - counters.position)
     local price = state.order.price or market.mid
-    local enterSpread = etc.enterSpread*etc.priceStepSize
-    local sellPrice = market.offer + enterSpread
-    local buyPrice = market.bid - enterSpread
+    local buyPrice, sellPrice = self:calcSpread(etc.enterSpread)
 
     local res, err = true, ""
 
     if active then
         state.phase = PHASE_WAIT
         state.state = "Ожидание исполнения ордера"
-        if (diff > 0 and state.order.operation == 'S') or (diff < 0 and state.order.operation == 'B') then
+        if (diff >= 0 and state.order.operation == 'S') or (diff <= 0 and state.order.operation == 'B') then
             res, err = self:killOrders()
             state.phase = PHASE_CANCEL
             state.state = "Отмена ордера из-за изменения тренда"
@@ -736,7 +710,7 @@ function strategy:onMarketShift()
         state.phase = PHASE_WAIT
         state.state = "Отправка ордера"
         -- lot cannot be bigger
-        local lotSize = math.min(math.abs(diff), self:getLimit(2*etc.absPositionLimit, 2*self.etc.relPositionLimit))
+        local lotSize = math.min(math.abs(diff), self:getLimit(2*etc.absPositionLimit, math.min(1, 2*etc.relPositionLimit)))
         local res, err = true, ""
         state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
         if diff < 0 then
@@ -751,7 +725,11 @@ function strategy:onMarketShift()
         state.refPrice = market.mid
         self:checkStatus(res, err)
     else
-        state.state = string.format("%.3f Удержание позиции", market.trigger)
+        if market.trigger < WAIT_UNTIL then
+            state.state = string.format("Накопление данных (%3.0f%%)", market.trigger/WAIT_UNTIL*100)
+        else
+            state.state = string.format("Удержание позиции")
+        end
     end
 end
 
