@@ -41,7 +41,7 @@ local q_time = require("qlib/quik-time")
 
 -- global variables
 q_stopAt = q_time.at("19:00")
-g_brokerFee = 2
+g_brokerFee = 0.7
 
 print("")
 print("Level 2 Market Data Player II (c) 2016, 2017")
