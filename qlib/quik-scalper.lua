@@ -125,6 +125,11 @@ function q_scalper.create(etc)
     return self
 end
 
+function q_scalper:init()
+    self:Print("q_scalper:init(): self.etc.avgFactorSpot = %d", self.etc.avgFactorSpot)
+    q_base_strategy.init(self)
+end
+
 function q_scalper:calcSpread(spread)
     local etc = self.etc
     local market = self.state.market

@@ -29,8 +29,8 @@ local l2r = {
         state = "Запись",
     },
     assets = {
-        { class='SPBFUT', asset='SiH7' },
-        { class='SPBFUT', asset='EuH7' },
+        { class='SPBFUT', asset='SiM7' },
+        { class='SPBFUT', asset='EuM7' },
         { class='CETS', asset='EUR_RUB__TOD' },
         { class='CETS', asset='EUR_RUB__TOM' },
         { class='CETS', asset='USD000000TOD' },

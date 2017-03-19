@@ -100,7 +100,7 @@ function q_base_strategy.create(title, etcDerived, etcClient)
         self.etc.firmid = etc.firmid or self.etc.firmid
         self.etc.asset = etc.asset or self.etc.asset
         self.etc.class = etc.class or self.etc.class
-        self.etc:merge(etc)
+        self.etc:merge(etcClient)
     end
 
     setmetatable(self, { __index = q_base_strategy })
@@ -182,10 +182,8 @@ function q_base_strategy:init()
     -- initial counters and position
     local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    self:Print("q_base_strategy:Init(): counters.position = %d, counters.margin = %.0f", counters.position, counters.margin) 
     counters.position = q_utils.getPos(self.etc.asset)
     counters.margin = -counters.position*settleprice
-    self:Print("q_base_strategy:Init(): counters.position = %d, counters.margin = %.0f", counters.position, counters.margin) 
 
     local balance = self:calcBalance()
     self.state.balance.atStart = balance
@@ -341,7 +339,7 @@ function q_base_strategy:getQuoteLevel2()
 end
 
 function q_base_strategy:Print(fmt, ...)
-  -- [[
+  --[[
     local state = self.state
     local market = state.market
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
