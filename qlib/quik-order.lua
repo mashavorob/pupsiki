@@ -43,6 +43,12 @@ local allOrders = {}
 -- killer.trans_id -> victim.trans_id
 local killTargets = {}
 
+function q_order.reset()
+    q_order.counters={}
+    allOrders = {}
+    killTargets = {}
+end
+
 function q_order.getCounters(account, class, asset)
     local counters = q_order.counters[account]
     if not counters then

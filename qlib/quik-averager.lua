@@ -132,7 +132,7 @@ function q_averager.create(etc)
                 { bid = 0
                 , offer = 0
                 , mid = 0
-                , avgMid = 0
+                , avgMid = false
                 , trend = 0
                 , trend2 = 0
                 , trigger = 0
@@ -252,7 +252,7 @@ function strategy:init()
                 { bid = 0
                 , offer = 0
                 , mid = 0
-                , avgMid = 0
+                , avgMid = false
                 , trend = 0
                 , trend2 = 0
                 , trigger = 0
@@ -467,7 +467,7 @@ function strategy:onIdle(now)
         format = "%0.2f"
     end
 
-ui_state.spot = string.format(format, (state.market.avgMid or 0))
+    ui_state.spot = string.format(format, (state.market.avgMid or 0))
     ui_state.trend = formatVal(state.market.trend2)
 
     if self:checkSchedule() and isConnected() ~= 0 then
@@ -601,10 +601,10 @@ function strategy:calcPlannedPos()
         return
     end
 
-    if market.trend2 > 0 then
-        state.targetPos = 1
-    elseif market.trend2 < 0 then
+    if market.trend > 0 then
         state.targetPos = -1
+    elseif market.trend < 0 then
+        state.targetPos = 1
     end
 
     state.targetPos = state.targetPos*self:getLimit()

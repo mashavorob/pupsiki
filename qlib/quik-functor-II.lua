@@ -17,6 +17,7 @@ local q_book = require("qlib/quik-book-II")
 local q_persist = require("qlib/quik-l2-persist")
 local q_client = require("qlib/quik-book-client")
 local q_utils = require("qlib/quik-utils")
+local q_order = require("qlib/quik-order")
 --local ProFi = require("ProFi")
 local simTime = 0
 local simTransId = 1000000
@@ -128,11 +129,7 @@ function q_functor:createStrategy()
 end
 
 function q_functor:freeStrategy()
-    package.loaded["qlib/" .. self.s_params.name] = nil
-    package.loaded["qlib/quik-avg"] = nil
-    package.loaded["qlib/quik-order"] = nil
-    package.loaded["qlib/quik-time"] = nil
-    collectgarbage()
+    q_order.reset()
 end
 
 function q_functor:runDay(day)
