@@ -19,6 +19,10 @@ local etc =
     , asset             = 'SiM7'
     , class             = "SPBFUT"
     , avgFactorSpot     = 1000  -- коэффициент осреднения спот
+    , avgFactorSigma    = 5000  -- коэфициент осреднения волатильности
+    , minSpread         = 10    -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
+    , enterSpread       = 0     -- отступ от края стакана для открытия позиции
+
     }
 
 local scriptFolder = false
