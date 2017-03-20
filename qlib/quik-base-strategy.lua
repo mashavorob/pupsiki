@@ -20,6 +20,16 @@ local q_base_strategy =
     -- master configuration 
     -- Главные параметры, задаваемые в ручную
     { etc = { asset = "SiH7"                 -- бумага
+    --[[ 
+        Коды контрактов:
+            Si - USDRUB
+            RI - RTS Index
+        Коды месяцев:
+            H - март
+            M - июнь
+            U - сентябрь
+            Z - декабрь
+    ]]
             , class = "SPBFUT"               -- класс
             , title = "qscalper - [SiH7]"    -- заголовок таблицы
 

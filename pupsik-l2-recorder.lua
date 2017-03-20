@@ -29,6 +29,20 @@ local l2r = {
         state = "Запись",
     },
     assets = {
+    --[[ 
+        Коды контрактов:
+            Si - USDRUB
+            RI - RTS Index
+            Eu - EURRUB
+            ED - EURUSD
+            GZ - GAZR Газпром
+            GD - GOLD Золото
+        Коды месяцев:
+            H - март
+            M - июнь
+            U - сентябрь
+            Z - декабрь
+    ]]
         { class='SPBFUT', asset='SiM7' },
         { class='SPBFUT', asset='EuM7' },
         { class='CETS', asset='EUR_RUB__TOD' },

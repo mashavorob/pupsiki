@@ -283,7 +283,7 @@ local function probeParam(strategy, logs, options, ctx)
             , value = q_simulator.runStrategy(strategy, logs, ctx)
             }
 
-        print("Result:", result.value)
+        print(string.format("Result: %.02f", result.value))
         print()
 
         return { result }
