@@ -344,6 +344,7 @@ end
 
 function q_scalper:onTrade(trade)
     self.inherited.onTrade(self, trade)
+    self:calcPlannedPos()
     self:updatePosition()
 end
 
