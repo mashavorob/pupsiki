@@ -73,7 +73,6 @@ local q_scalper =
             , { name="comission", title="Коммисия", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.02f" }
             , { name="lotsCount", title="Контракты", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" }
             , { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=25, format="%s" }
-            , { name="ordersLatencies", title="Задер.заявок (ms)", ctype=QTABLE_STRING_TYPE, width=20, format="%s" }
             , { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=40, format="%s" }
             , { name="lastError", title="Результат последней операции", ctype=QTABLE_STRING_TYPE, width=45, format="%s" }
         }
@@ -213,10 +212,12 @@ function q_scalper:updatePosition()
             self:Print("Enter long at: %d@%f", lotSize, buyPrice)
             state.state = "Открытие лонг"
             res, err = state.order:send('B', buyPrice, lotSize)
+            state.buyPrice = buyPrice
         elseif state.targetPos < 0 then
             self:Print("Enter short at: %d@%f", lotSize, sellPrice)
             state.state = "Открытие шорт"
             res, err = state.order:send('S', sellPrice, lotSize)
+            state.sellPrice = sellPrice
         else
             --self:Print("Hold zero (1): target=%d actual=%d", state.targetPos, counters.position)
         end
@@ -250,10 +251,10 @@ function q_scalper:updatePosition()
         local spread = math.max(math.floor(etc.openThreshold*market.deviation/etc.priceStepSize + 0.5), etc.minSpread)
         spread = spread*etc.priceStepSize
         if position > 0 and diff > 0 then
-            res, err = order:send('S', state.order.price + spread, diff)
+            res, err = order:send('S', state.buyPrice + spread, diff)
             self:Print("fixing profit - SELL  %d@%f", diff, order.price)
         elseif position < 0 and diff < 0 then
-            res, err = order:send('B', state.order.price - spread, -diff)
+            res, err = order:send('B', state.sellPrice - spread, -diff)
             self:Print("fixing profit - BUY  %d@%f", -diff, order.price)
         end
         if res then
@@ -316,10 +317,12 @@ function q_scalper:updatePosition()
             self:Print("Changing to long at: %d@%f", lotSize, buyPrice)
             state.state = "Переключение в лонг"
             res, err = state.order:send('B', buyPrice, lotSize)
+            state.buyPrice = buyPrice
         elseif diff < 0 then
             self:Print("Changing to short at: %d@%f", lotSize, sellPrice)
             state.state = "Переключение в шорт"
             res, err = state.order:send('S', sellPrice, lotSize)
+            state.sellPrice = sellPrice
         else
             self:Print("Hold position (2): target=%d actual=%d", state.targetPos, counters.position)
         end

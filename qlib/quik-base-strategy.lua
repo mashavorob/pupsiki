@@ -19,7 +19,7 @@ local q_time = require("qlib/quik-time")
 local q_base_strategy =
     -- master configuration 
     -- Главные параметры, задаваемые в ручную
-    { etc = { asset = "SiM7"                 -- бумага
+    { etc = { asset = "SiH7"                 -- бумага
     --[[ 
         Коды контрактов:
             Si - USDRUB
@@ -105,11 +105,11 @@ function q_base_strategy.create(title, etcDerived, etcClient)
                   }
         }
 
-    if etc then
-        self.etc.account = etc.account or self.etc.account
-        self.etc.firmid = etc.firmid or self.etc.firmid
-        self.etc.asset = etc.asset or self.etc.asset
-        self.etc.class = etc.class or self.etc.class
+    if etcClient then
+        self.etc.account = etcClient.account or self.etc.account
+        self.etc.firmid = etcClient.firmid or self.etc.firmid
+        self.etc.asset = etcClient.asset or self.etc.asset
+        self.etc.class = etcClient.class or self.etc.class
         self.etc:merge(etcClient)
     end
 

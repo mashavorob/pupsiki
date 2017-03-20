@@ -18,7 +18,7 @@ local etc =
 
     , asset             = 'SiM7'
     , class             = "SPBFUT"
-    , avgFactorSpot     = 100  -- коэффициент осреднения спот
+    , avgFactorSpot     = 1000  -- коэффициент осреднения спот
     }
 
 local scriptFolder = false
