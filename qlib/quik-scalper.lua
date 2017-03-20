@@ -160,8 +160,6 @@ function q_scalper:updatePosition()
     end
 
     local sellPrice, buyPrice = self:calcSpread(etc.enterSpread)
-    local res, err = true, "<Not Error>"
-
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
 
     if state.phase == q_scalper.PHASE_TRADING then
@@ -211,12 +209,14 @@ function q_scalper:updatePosition()
         if state.targetPos > 0 then
             self:Print("Enter long at: %d@%f", lotSize, buyPrice)
             state.state = "Открытие лонг"
-            res, err = state.order:send('B', buyPrice, lotSize)
+            local res, err = state.order:send('B', buyPrice, lotSize)
+            self:checkStatus(res, err)
             state.buyPrice = buyPrice
         elseif state.targetPos < 0 then
             self:Print("Enter short at: %d@%f", lotSize, sellPrice)
             state.state = "Открытие шорт"
-            res, err = state.order:send('S', sellPrice, lotSize)
+            local res, err = state.order:send('S', sellPrice, lotSize)
+            self:checkStatus(res, err)
             state.sellPrice = sellPrice
         else
             --self:Print("Hold zero (1): target=%d actual=%d", state.targetPos, counters.position)
@@ -251,10 +251,12 @@ function q_scalper:updatePosition()
         local spread = math.max(math.floor(etc.openThreshold*market.deviation/etc.priceStepSize + 0.5), etc.minSpread)
         spread = spread*etc.priceStepSize
         if position > 0 and diff > 0 then
-            res, err = order:send('S', state.buyPrice + spread, diff)
+            local res, err = order:send('S', state.buyPrice + spread, diff)
+            self:checkStatus(res, err)
             self:Print("fixing profit - SELL  %d@%f", diff, order.price)
         elseif position < 0 and diff < 0 then
-            res, err = order:send('B', state.sellPrice - spread, -diff)
+            local res, err = order:send('B', state.sellPrice - spread, -diff)
+            self:checkStatus(res, err)
             self:Print("fixing profit - BUY  %d@%f", -diff, order.price)
         end
         if res then
@@ -284,9 +286,7 @@ function q_scalper:updatePosition()
         if state.order:isDeactivating() then
             self:Print("Price changing - order is deactivating")
             -- discard deactivating order
-            local price = state.order.price
             state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-            state.order.price = price
         end
 
         -- kill old order
@@ -316,12 +316,14 @@ function q_scalper:updatePosition()
         if diff > 0 then
             self:Print("Changing to long at: %d@%f", lotSize, buyPrice)
             state.state = "Переключение в лонг"
-            res, err = state.order:send('B', buyPrice, lotSize)
+            local res, err = state.order:send('B', buyPrice, lotSize)
+            self:checkStatus(res, err)
             state.buyPrice = buyPrice
         elseif diff < 0 then
             self:Print("Changing to short at: %d@%f", lotSize, sellPrice)
             state.state = "Переключение в шорт"
-            res, err = state.order:send('S', sellPrice, lotSize)
+            local res, err = state.order:send('S', sellPrice, lotSize)
+            self:checkStatus(res, err)
             state.sellPrice = sellPrice
         else
             self:Print("Hold position (2): target=%d actual=%d", state.targetPos, counters.position)
@@ -332,7 +334,6 @@ function q_scalper:updatePosition()
     else
         self:Print("Something goes different: state:phase = %d", state.phase)
     end
-    self:checkStatus(res, err)
 end
 
 function q_scalper:onTransReply(reply)
@@ -537,91 +538,8 @@ function q_scalper:checkOrders()
     end
     return pending, active
 end
---[[
-function q_scalper:onMarketShift()
-
-    local etc = self.etc
-    local state = self.state
-    local market = state.market
-    
-    -- check halts and pending orders
-    if self.state.halt or self.state.cancel or self.state.pause then
-        self:Print("onMarketShift() exit due to halt cancel or pause")
-        return
-    end
-
-    self:updatePosition()
-    local pending, active = self:checkOrders()
-
-    if pending then
-        return
-    end
-    
-    prevPos = prevPos or 0
-    if state.targetPos ~= prevPos then
-        self:Print("onMarketShift(): state.targetPos = %s", tostring(state.targetPos))
-        prevPos = state.targetPos
-    end
-
-    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    local diff = (state.targetPos - counters.position)
-    local price = state.order.price or market.mid
-    local enterSpread = etc.enterSpread*etc.priceStepSize
-    local sellPrice = market.offer + enterSpread
-    local buyPrice = market.bid - enterSpread
-
-    local res, err = true, ""
-
-    if active then
-        state.state = "Ожидание исполнения ордера"
-        if (diff > 0 and state.order.operation == 'S') or (diff < 0 and state.order.operation == 'B') then
-            res, err = self:killOrders()
-            state.phase = q_scalper.PHASE_CANCEL
-            state.state = "Отмена ордера из-за изменения тренда"
-            self:Print("Cancel order due to trend changing")
-        end
-        self:checkStatus(res, err)
-        -- wait while the order is canceled
-        return
-    elseif diff ~= 0 then
-        state.take_profit = {} -- discard inactive take-profit orders
-        state.state = "Отправка ордера"
-        -- lot cannot be bigger
-        local lotSize = math.min(math.abs(diff), self:getLimit(2*etc.absPositionLimit, 2*self.etc.relPositionLimit))
-        local res, err = true, ""
-        state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-        if diff < 0 then
-            self:Print("Enter short at: %d@%f", lotSize, sellPrice)
-            state.state = (state.targetPos < 0) and "Открытие шорт" or "Закрытие лонг"
-            res, err = state.order:send('S', sellPrice, lotSize)
-        else
-            self:Print("Enter long at: %d@%f", lotSize, buyPrice)
-            state.state = (state.targetPos > 0) and "Открытие лонг" or "Закрыте шорт"
-            res, err = state.order:send('B', buyPrice, lotSize)
-        end
-        state.refPrice = market.mid
-        self:checkStatus(res, err)
-    else
-        state.state = string.format("%.3f Удержание позиции", market.trigger)
-    end
-end
-]]
 
 function q_scalper:onDisconnected()
-end
-
-function q_scalper:checkStatus(status, err)
-    if not status then
-        self:Print("status: %s, error: %s", status, err)
-        assert(false)
-        assert(err, "err is nil")
-        self.ui_state.lastError = "Ошибка: " .. tostring(err)
-        self.ui_state.state = "Приостановка (" .. self.state.state .. ")"
-        self.state.halt = true
-        return false
-    end    
-    self.ui_state.lastError = "OK"
-    return true
 end
 
 function q_scalper:killPosition()
