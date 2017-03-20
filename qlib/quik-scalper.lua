@@ -250,12 +250,13 @@ function q_scalper:updatePosition()
         local order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
         local spread = math.max(math.floor(etc.openThreshold*market.deviation/etc.priceStepSize + 0.5), etc.minSpread)
         spread = spread*etc.priceStepSize
+        local res, err = false, ""
         if position > 0 and diff > 0 then
-            local res, err = order:send('S', state.buyPrice + spread, diff)
+            res, err = order:send('S', state.buyPrice + spread, diff)
             self:checkStatus(res, err)
             self:Print("fixing profit - SELL  %d@%f", diff, order.price)
         elseif position < 0 and diff < 0 then
-            local res, err = order:send('B', state.sellPrice - spread, -diff)
+            res, err = order:send('B', state.sellPrice - spread, -diff)
             self:checkStatus(res, err)
             self:Print("fixing profit - BUY  %d@%f", -diff, order.price)
         end
