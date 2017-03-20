@@ -19,7 +19,7 @@ local q_time = require("qlib/quik-time")
 local q_base_strategy =
     -- master configuration 
     -- Главные параметры, задаваемые в ручную
-    { etc = { asset = "SiH7"                 -- бумага
+    { etc = { asset = "SiM7"                 -- бумага
     --[[ 
         Коды контрактов:
             Si - USDRUB
@@ -244,7 +244,6 @@ function q_base_strategy:onIdle(now)
     self.now = quik_ext.gettime()
     q_order.onIdle()
     self:updatePosition()
-    self:onMarketShift()
 
     local state = self.state
     local ui_state = self.ui_state
@@ -442,6 +441,9 @@ end
 --
 function q_base_strategy:checkOrders()
     assert(false, "q_base_strategy:checkOrders() - pure virtual call")
+end
+
+function q_base_strategy:onMarketShift()
 end
 
 return q_base_strategy

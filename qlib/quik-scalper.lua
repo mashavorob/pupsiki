@@ -24,19 +24,19 @@ local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorSpot     = 60       -- коэффициент осреднения спот
+        { avgFactorSpot     = 1000       -- коэффициент осреднения спот
         , avgFactorSigma    = 5000       -- коэфициент осреднения волатильности
         , openThreshold     = 1          -- порог чувствительности для входа в позицию
         , stopLossThreshold = 2          -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
-        , minSpread = 20                 -- Внимание: спред береться из соотвествующего файла:
+        , minSpread = 10                 -- Внимание: спред береться из соотвествующего файла:
                                          --     * pupsik-scalper-si.lua,
                                          --     * pupsik-scalper-ri.lua,
                                          --     * и так далее
                                          -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
                                           
-        , enterSpread = 2                -- отступ от края стакана для открытия позиции
+        , enterSpread = 0                -- отступ от края стакана для открытия позиции
 
         , params = 
             { { name="avgFactorSpot",  min=1, max=1e32, step=10, precision=1 }
@@ -289,14 +289,15 @@ function q_scalper:updatePosition()
         end
 
         -- kill old order
-        if state.order:isActive() and
-            ((state.targetPos > 0 and state.order.operation == 'S') 
-                or (state.targetPos < 0 and state.order.operation == 'B'))
-        then
-            self:Print("Price changing - kill order")
-            local res, err = state.order:kill()
-            self:checkStatus(res, err)
+        if state.order:isActive() then
             activeOrders = true
+            if ((state.targetPos > 0 and state.order.operation == 'S') 
+                or (state.targetPos < 0 and state.order.operation == 'B'))
+            then
+                self:Print("Price changing - kill order")
+                local res, err = state.order:kill()
+                self:checkStatus(res, err)
+            end
         end
 
         if activeOrders then
@@ -378,10 +379,13 @@ function q_scalper:onIdle(now)
     local ui_state = self.ui_state
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     
+    ui_state.position = counters.position
+    ui_state.targetPos = state.targetPos
+
     local format = self:getPriceFormat() .. " /%s"
 
-    ui_state.spot = string.format(format, (state.market.avgMid or 0), self.formatVal(state.market.deviation))
-    ui_state.trend = self.formatVal(state.market.trend2)
+    ui_state.spot = string.format(format, (state.market.avgMid or 0), self.formatValue(state.market.deviation))
+    ui_state.trend = self.formatValue(state.market.trend2)
 
     ui_state.lastError = "--"
     self:Print("onIdle(): ui_state.state='%s'", ui_state.state)
@@ -446,7 +450,7 @@ function q_scalper:calcPlannedPos()
     end
 
     if market.trigger <= 0.5 then
-        self.state.state = "Недостаточно данных"
+        self.state.state = string.format("Недостаточно данных (%.2f)", market.trigger)
         return
     end
     if state.phase == q_scalper.PHASE_READY then
