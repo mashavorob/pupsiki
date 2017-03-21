@@ -160,6 +160,7 @@ function q_scalper:updatePosition()
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
 
     if state.phase == q_scalper.PHASE_TRADING then
+        --[[
         local maxSpread = math.floor(market.deviation*etc.stopLossThreshold/etc.priceStepSize + 0.5)
         maxSpread = math.max(maxSpread, etc.minSpread)*etc.priceStepSize
         if ((state.order.operation == 'B' and market.mid < (state.order.price - maxSpread)) or
@@ -170,7 +171,8 @@ function q_scalper:updatePosition()
             state.phase = q_scalper.PHASE_PRICE_CHANGE
             self:Print("Killing position because price is out of range: %s@%f - %f (%f)"
                 , state.order.operation, state.order.price, market.mid, maxSpread)
-        elseif state.order.operation == 'B' and state.targetPos < 0 then
+        else]]
+        if state.order.operation == 'B' and state.targetPos < 0 then
             self:Print("Changing trend to backwardation")
             state.phase = q_scalper.PHASE_PRICE_CHANGE
         elseif state.order.operation == 'S' and state.targetPos > 0 then
@@ -491,7 +493,7 @@ function q_scalper:calcPlannedPos()
     then
         state.targetPos = 1
     elseif market.trend < 0 
-        and market.mid >= (market.avgMid - spread) 
+        and market.mid >= (market.avgMid + spread) 
     then
         state.targetPos = -1
     end
