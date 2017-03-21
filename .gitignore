@@ -3,6 +3,7 @@
 **.wpos
 **.dll
 **.so
+**.csv
 logs/*.log
 logs/*.ods
 logs/*.txt
