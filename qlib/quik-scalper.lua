@@ -26,7 +26,7 @@ local q_scalper =
         -- Параметры стратегии
         { avgFactorSpot     = 1000       -- коэффициент осреднения спот
         , avgFactorSigma    = 5000       -- коэфициент осреднения волатильности
-        , openThreshold     = 1          -- порог чувствительности для входа в позицию
+        , openThreshold     = 1.2        -- порог чувствительности для входа в позицию
         , stopLossThreshold = 2          -- порог чувствительности для выхода из позиции
 
         -- Вспомогательные параметры
@@ -44,11 +44,8 @@ local q_scalper =
             , { name="openThreshold"
               , min=0
               , max=1e32
-              , get_max = function (func) 
-                    return func.stopLossThreshold
-                end
               , step=0.1
-              , precision=0.1
+              , precision=0.01
               }
             , { name="stopLossThreshold"
               , min=0
@@ -57,7 +54,7 @@ local q_scalper =
                     return func.openThreshold
                 end
               , step=0.1
-              , precision=0.1 
+              , precision=0.01 
               }
             , { name="minSpread", min=-100, max=100, step=1, precision=1 }
             , { name="enterSpread", min=-100, max=100, step=1, precision=1 }

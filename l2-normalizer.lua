@@ -38,7 +38,7 @@ local ln = 0
 local seq_num = 1
 
 
-local startFrom = getTimeOfDay {hour=11, min=30}
+local startFrom = getTimeOfDay {hour=10, min=00}
 local endAt = getTimeOfDay {hour=19}
 
 local function makeCopy(t)
@@ -111,7 +111,7 @@ for line in io.stdin:lines() do
     if success then
         -- workaraounds for bugs
         if ev.event == "onParams" then
-            ev.params.SELDEPO = ev.params.SELDEPO or ev.params.BUYDEPO
+            ev.params.SELLDEPO = ev.params.SELLDEPO or ev.params.BUYDEPO
             for _,p in pairs(ev.params) do
                 p.param_image = nil
             end

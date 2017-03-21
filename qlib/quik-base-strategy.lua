@@ -19,7 +19,7 @@ local q_time = require("qlib/quik-time")
 local q_base_strategy =
     -- master configuration 
     -- √лавные параметры, задаваемые в ручную
-    { etc = { asset = "SiH7"                 -- бумага
+    { etc = { asset = "SiM7"                 -- бумага
     --[[ 
          оды контрактов:
             Si - USDRUB
@@ -49,12 +49,20 @@ local q_base_strategy =
             , maxLoss = 1000                 -- максимальна€ приемлима€ потер€
 
             -- расписание работы
-            , schedule = { q_time.interval("10:00", "12:55") -- 10:01 - 12:55
-                         , q_time.interval("13:05", "13:58") -- 13:01 - 13:55
-                         , q_time.interval("14:05", "15:44") -- 14:16 - 15:45
-                         , q_time.interval("16:01", "18:50") -- 16:01 - 18:55
+            -- [[ UAT
+            , schedule = { q_time.interval("10:01", "12:55") -- 10:01 - 12:55
+                         , q_time.interval("13:05", "13:55") -- 13:05 - 13:55
+                         , q_time.interval("14:10", "15:40") -- 14:10 - 15:40
+                         , q_time.interval("16:01", "18:50") -- 16:01 - 18:50
                          , q_time.interval("19:01", "21:55") -- 19:01 - 21:55
                          }
+            -- ]]
+            --[[ PROD
+            , schedule = { q_time.interval("10:01", "13:55") -- 10:00 - 14:00 -- ќсновна€ сесси€ (утро)
+                         , q_time.interval("14:06", "18:40") -- 14:05 - 18:45 -- ќсновна€ сесси€ (вечер)
+                         , q_time.interval("19:06", "23:40") -- 19:00 - 23:50 -- ¬ечерн€€ дополнительна€ сесси€
+                         }
+            --]]
             }
 
     , ui_mapping = {}

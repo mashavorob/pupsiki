@@ -60,7 +60,7 @@ function q_utils.getBuyDepo(class, asset)
 end
 
 function q_utils.getSellDepo(class, asset)
-    return tonumber(getParamEx(class, asset, "SELDEPO").param_value)
+    return tonumber(getParamEx(class, asset, "SELLDEPO").param_value)
 end
 
 function q_utils.getMinPrice(class, asset)
