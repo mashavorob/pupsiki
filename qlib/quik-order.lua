@@ -35,7 +35,7 @@ local orderStatusError =
     , [13] = "Транзакция отвергнута так как ее выполнение могло привести к кросс-сделке"
     }
 
-local TIME_TO_LIVE = 5
+local TIME_TO_LIVE = 100
 
 -- trans_id -> order
 local allOrders = {}
@@ -98,6 +98,13 @@ function q_order.onTransReply(reply)
         end
     end
     return true, false, ""
+end
+
+function q_order.onOrder(data)
+    local order = allOrders[data.trans_id]
+    if order then
+        return order:onOrder(data)
+    end
 end
 
 function q_order.onTrade(trade)
@@ -266,10 +273,12 @@ function order:kill()
     return false, res
 end
 
-function order:send(operation, price, size)
+function order:send(operation, price, size, condition)
     assert(not self:isActive(), "The order is active\n" .. debug.traceback())
     assert(not self:isPending(), "The order is pending\n" .. debug.traceback())
-    assert(not self:isDeactivating(), "The order is pending\n" .. debug.traceback())
+    assert(not self:isDeactivating(), "The order is deactivating\n" .. debug.traceback())
+
+    condition = condition or "PUT_IN_QUEUE"
 
     if self.trans_id then
         allOrders[self.trans_id] = nil
@@ -286,9 +295,12 @@ function order:send(operation, price, size)
     self.balance = size
     self.price = price
     self.size = size
+    self.condition = condition
     self.trades = {}
 
     allOrders[self.trans_id] = self
+
+
 
     local transaction = {
         TRANS_ID=tostring(self.trans_id),
@@ -298,7 +310,7 @@ function order:send(operation, price, size)
         ACTION="NEW_ORDER",
         TYPE="L",
         OPERATION=self.operation,
-        EXECUTE_CONDITION="PUT_IN_QUEUE",
+        EXECUTE_CONDITION=condition,
         PRICE=tostring(self.price),
         QUANTITY=tostring(self.size),
     }
@@ -341,10 +353,18 @@ function order:onTransReply(reply)
         self.balance = 0
     else
         assert(reply.order_num)
-        self.order_num = reply.order_num 
+        self.order_num = reply.order_num
         err = ""
     end
     return status, delay, (err or "")
+end
+
+function order:onOrder(data)
+    if bit.band(data.flags, 1) == 0 then
+        self.active = false
+        self.pending = false
+        self.ttl = TIME_TO_LIVE
+    end
 end
 
 function order:onKillReply(reply)

@@ -16,11 +16,14 @@ local q_order = require("qlib/quik-order")
 local q_utils = require("qlib/quik-utils")
 local q_time = require("qlib/quik-time")
 
+local CONTINUOUS_TRADING = 1
+local CLOSING_POSITIONS = 2
+
 local q_base_strategy =
     -- master configuration 
     -- Главные параметры, задаваемые в ручную
     { etc = { asset = "SiM7"                 -- бумага
-    --[[ 
+    --[[
         Коды контрактов:
             Si - USDRUB
             RI - RTS Index
@@ -50,17 +53,33 @@ local q_base_strategy =
 
             -- расписание работы
             -- [[ UAT
-            , schedule = { q_time.interval("10:01", "12:55") -- 10:01 - 12:55
-                         , q_time.interval("13:05", "13:55") -- 13:05 - 13:55
-                         , q_time.interval("14:10", "15:40") -- 14:10 - 15:40
-                         , q_time.interval("16:01", "18:50") -- 16:01 - 18:50
-                         , q_time.interval("19:01", "21:55") -- 19:01 - 21:55
+                         -- 10:01 - 13:00 
+            , schedule = { { period=q_time.interval("10:01", "12:55"), phase=CONTINUOUS_TRADING }
+                         , { period=q_time.interval("12:55", "13:00"), phase=CLOSING_POSITIONS }
+                         -- 13:05 - 14:00
+                         , { period=q_time.interval("13:05", "13:55"), phase=CONTINUOUS_TRADING }
+                         , { period=q_time.interval("13:55", "14:00"), phase=CLOSING_POSITIONS }
+                         -- 14:10 - 15:45
+                         , { period=q_time.interval("14:10", "15:40"), phase=CONTINUOUS_TRADING }
+                         , { period=q_time.interval("15:40", "15:45"), phase=CLOSING_POSITIONS }
+                         -- 16:01 - 18:55
+                         , { period=q_time.interval("16:01", "18:50"), phase=CONTINUOUS_TRADING }
+                         , { period=q_time.interval("18:50", "18:55"), phase=CLOSING_POSITIONS }
+                         -- 19:01 - 22:00
+                         , { period=q_time.interval("19:01", "21:55"), phase=CONTINUOUS_TRADING }
+                         , { period=q_time.interval("21:55", "22:00"), phase=CLOSING_POSITIONS }
                          }
             -- ]]
             --[[ PROD
-            , schedule = { q_time.interval("10:01", "13:55") -- 10:00 - 14:00 -- Основная сессия (утро)
-                         , q_time.interval("14:06", "18:40") -- 14:05 - 18:45 -- Основная сессия (вечер)
-                         , q_time.interval("19:06", "23:40") -- 19:00 - 23:50 -- Вечерняя дополнительная сессия
+                         -- 10:01 - 14:00 
+            , schedule = { { period=q_time.interval("10:01", "13:55"), phase=CONTINUOUS_TRADING }
+                         , { period=q_time.interval("13:55", "14:00"), phase=CLOSING_POSITIONS }
+                         -- 14:06 - 18:45
+                         , { period=q_time.interval("14:06", "18:40"), phase=CONTINUOUS_TRADING }
+                         , { period=q_time.interval("18:40", "18:45"), phase=CLOSING_POSITIONS }
+                         -- 19:06 - 23:45
+                         , { period=q_time.interval("19:06", "23:40"), phase=CONTINUOUS_TRADING }
+                         , { period=q_time.interval("23:40", "23:45"), phase=CLOSING_POSITIONS }
                          }
             --]]
             }
@@ -70,6 +89,9 @@ local q_base_strategy =
     , PHASE_INIT   = 1
     , PHASE_READY  = 2
     , PHASE_CANCEL = 3
+
+    , CONTINUOUS_TRADING = CONTINUOUS_TRADING
+    , CLOSING_POSITIONS = CLOSING_POSITIONS
 
     }
 
@@ -136,9 +158,9 @@ end
 
 function q_base_strategy:checkSchedule()
     local now = quik_ext.gettime()
-    for _,period in ipairs(self.etc.schedule) do
-        if period:isInside(now) then
-            return true
+    for _,tf in ipairs(self.etc.schedule) do
+        if tf.period:isInside(now) then
+            return tf.phase
         end
     end
     return false
@@ -243,6 +265,10 @@ function q_base_strategy:onTransReply(reply)
     end
 end
 
+function q_base_strategy:onOrder(data)
+    q_order.onOrder(data)
+end
+
 function q_base_strategy:onTrade(trade)
     self:Print(string.format("onTrade(%d@%f)", trade.qty, trade.price))
     q_order.onTrade(trade)
@@ -332,6 +358,7 @@ function q_base_strategy:onIdle(now)
     else
         ui_state.state = state.state
     end
+    state.state = "--"
 
     ui_state.lastError = "--"
     self:Print("onIdle(): ui_state.state='%s'", ui_state.state)
@@ -367,7 +394,10 @@ function q_base_strategy:Print(fmt, ...)
     local ms = math.floor((now - math.floor(now))*1000)
     local args = {...}
 
-    local preamble = string.format("%6.0f %s.%03d (%4.0f, %2d)", market.mid, os.date("%H:%M:%S", now), ms, balance, counters.position)
+    local preamble = string.format("%6.0f %6.04f %s.%03d (%4.0f, %2d)"
+        , market.mid, market.trend
+        , os.date("%H:%M:%S", now), ms, balance, counters.position
+        )
     local message = string.format(fmt, unpack(args))
     print(string.format("%s: %s", preamble, message))
     -- ]]

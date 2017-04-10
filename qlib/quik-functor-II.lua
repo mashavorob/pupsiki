@@ -166,7 +166,7 @@ function q_functor:runDay(day)
             if rec_time and rec_time > stopTime then
                 break
             end
-            if rec_time and now >= reportTime + reportPeriod then
+            if rec_time and now >= reportTime + reportPeriod and self.client then
                 reportTime = now
                 local margin = self.client:getBalance(book) - balanceAtStart
                 io.stderr:write(string.format("processing %s, margin: %.0f\n", os.date('%Y%m%d-%H:%M:%S', rec_time), margin))

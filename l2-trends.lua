@@ -16,160 +16,80 @@
 ]]
 
 local q_persist = assert(require("qlib/quik-l2-persist"))
+local q_bricks = assert(require("qlib/quik-bricks"))
 
-local window = {}
-local windowSize = 1000
+local function FPrint(fmt, ...)
+    local args = {...}
 
-local priceAvg = 0
-local normThreshold = 1
-local jumpThreshold = 2
-
-local FWAverager = {}
-
-function FWAverager:moveNext(window)
-    if #self.front then
-        table.insert(self.back, self.front[1])
-        table.remove(self.front, 1)
-    end
-    while #self.back > self.size do
-        table.remove(self.back, 1)
-    end
-    local len = math.max(1, self.size)
-    if #self.front < len then
-        -- skip extracted record
-        local index, i = 1, 1
-        while i < #window and index <= #self.front do
-            local ev = window[i]
-            if ev.event == "onQuote" then
-                index = index + 1
-            end
-            i = i + 1
-        end
-
-        while i < #window and #self.front < len do
-            local ev = window[i]
-            if ev.event == "onQuote" then
-                table.insert(self.front, self.extractPrice(ev.l2))
-            end
-            i = i + 1
-        end
-    end
-    if #self.front > 0 or #self.back > 0 then
-        local sum = 0
-        for _,p in ipairs(self.back) do sum = sum + p end
-        for _,p in ipairs(self.front) do sum = sum + p end
-        self.average = sum/(#self.front + #self.back)
-    end
-    return self.average
+    print( string.format(fmt, unpack(args)) )
 end
 
-function FWAverager.create(side, len)
+local function EPrint(fmt, ...)
+    local args = {...}
 
-    local self = { size = len
-                 , back = {}
-                 , front = {}
-                 , average = 0
-                 }
-    if side == 'B' then
-        self.extractPrice = function (l2) return l2.bid_count > 0 and l2.bid[#l2.bid].price or 0 end
-    else
-        self.extractPrice = function (l2) return l2.offer_count > 0 and l2.offer[1].price or 0 end
-    end
-    setmetatable(self, {__index = FWAverager})
-    return self
+    local message = string.format(fmt, unpack(args)) .. "\n"
+    io.stderr:write(message)
 end
 
+local xbit = bit or bit32
 
-local Trend = {}
+local trendAvg1 = 250
+local trendAvg2 = 250
 
-function Trend:onQuote(l2)
-
-    local bid = l2.bid or {}
-    local ask = l2.offer or {}
-
-    local bid_price = (#bid > 0) and bid[#bid].price
-    local ask_price = (#ask > 0) and ask[1].price
-
-    bid_price = bid_price or ask_price
-    ask_price = ask_price or bid_price
-    local mid_price = ask_price and (ask_price + bid_price)/2
-    self.mid_price = self.mid_price or mid_price
-    if not mid_price then
-        return
-    end
-    
-    self.mid_price = self.mid_price + 1/(self.priceAvg + 1)*(mid_price - self.mid_price)
-
-    local trend = mid_price - self.mid_price
-    self.trend = self.trend + 1/(self.priceAvg2 + 1)*(trend - self.trend)
-
-    local trend2 = trend - self.trend
-    self.trend2 = self.trend2 + 1/(self.priceAvg2 + 1)*(trend2 - self.trend2)
-   
-    local sigma = math.pow(trend2, 2)
-    self.sigma = self.sigma + 1/(self.sigmaAvg + 1)*(sigma - self.sigma)
-end
-
-function Trend.create(priceAvg, priceAvg2, sigmaAvg)
-    local self = { mid_price = nil
-                 , sigma = 0
-                 , trend = 0
-                 , trend2 = 0
-                 , priceAvg = priceAvg
-                 , priceAvg2 = priceAvg2
-                 , sigmaAvg = sigmaAvg
-                 , trigger = 0
-                 }
-    setmetatable(self, {__index = Trend})
-    return self
-end
-
-local avg_bid = FWAverager.create('B', priceAvg)
-local avg_ask = FWAverager.create('A', priceAvg)
-local trend = Trend.create(50, 50, 5000)
+local pricer = q_bricks.PriceTracker.create()
+local ma1 = q_bricks.MovingAverage.create(100)
+local ma2 = q_bricks.MovingAverage.create(3000)
+local ptrendB1 = q_bricks.Trend.create(trendAvg1)
+local ptrendA2 = q_bricks.Trend.create(trendAvg2)
+local ptrendB2 = q_bricks.Trend.create(trendAvg2)
+local alphaA = q_bricks.AlphaByTrend.create(12, 5)
+local alphaB = q_bricks.AlphaByTrend.create(0.01)
 
 local now = nil
 
-function processLine(window)
-    local ev = window[1]
-
+function processEvent(ev)
     local t = ev.time or ev.received_time
     if t then
         now = now or t
         now = math.max(now, t)
     end
     if ev.event == "onQuote" then
-        avg_bid:moveNext(window)
-        avg_ask:moveNext(window)
-        trend:onQuote(ev.l2)
-        changed = true
-    end
-    table.remove(window, 1)
+        pricer:onQuote(ev.l2)
 
-    if changed and now and 
-        trend.mid_price and
-        avg_bid.average > 0 and avg_ask.average > 0
-     then
+        ma1:onValue(pricer.mid)
+        ma2:onValue(pricer.mid)
+        ptrendB1:onValue(ma2.val)
+        ptrendA2:onValue(ma1.val - ma2.val)
+        ptrendB2:onValue(ptrendB1.trend)
+        alphaA:onValue(ma1.val - ma2.val, ptrendA2.trend)
+        alphaB:onValue(ptrendB1.trend, ptrendB2.trend)
+        changed = true
+    elseif ev.event == "onAllTrade" then
+        --trend:onAllTrade(ev.trade)
+        --changed = true
+    end
+
+    if changed and now and ma1.val then
         local ms = math.floor((now - math.floor(now))*1000)
         local timestamp = string.format("%s.%03d", os.date("%H:%M:%S", math.floor(now)), ms)
         local data =
-            { mid = (avg_bid.average + avg_ask.average)/2
-            , price = trend.mid_price
-            , up_price = math.sqrt(trend.sigma)*normThreshold
-            , low_price = -math.sqrt(trend.sigma)*normThreshold
-            , up_bar = math.sqrt(trend.sigma)*jumpThreshold
-            , low_bar = -math.sqrt(trend.sigma)*jumpThreshold
-            , trend = trend.trend
-            , trend2 = trend.trend2
+            { mid     = pricer.mid
+            , price1  = ma1.val
+            , price2  = ma2.val
+            , trendA1 = ma1.val - ma2.val
+            , trendB1 = ptrendB1.trend
+            , trendA2 = ptrendA2.trend
+            , trendB2 = ptrendB2.trend
+            , alphaA  = alphaA.alpha
+            , alphaB  = alphaB.alpha
             }
-        print(string.format(
+        FPrint(
             "%12s " ..
-            -- mid    price  up-p    low-p   u-b     l-b      trend   trend2
-            "%15.03f %15.03f %15.03f %15.03f %15.03f %15.03f  %15.04f %15.04f"
+            -- mid   price1  price2  trendA1 trendB1 trendA2 trendB2 alphaA alphaB
+            "%15.03f %15.03f %15.04f %15.04f %15.08f %15.12f %15.12f %15d %15d"
             , timestamp
-            , data.mid, data.price
-            , data.up_price, data.low_price, data.up_bar, data.low_bar, data.trend, data.trend2
-            ))
+            , data.mid, data.price1, data.price2, data.trendA1, data.trendB1, data.trendA2, data.trendB2, data.alphaA, data.alphaB
+            )
     end
 end
 
@@ -185,14 +105,14 @@ function normalize(t)
     end
 end
 
-print(string.format(
+FPrint(
     "%12s " ..
-    -- 2    3    4    5    6    7    8    9
-    "%15s %15s %15s %15s %15s %15s %15s %15s"
+    -- 2   3    4    5    6    7    8    9    10
+    "%15s %15s %15s %15s %15s %15s %15s %15s %15s"
     , "time"
-    -- 2      3        4           5            6               7               8        9
-    , "mid", "price", "up-price", "low-price", "upper-barier", "lower-barier", "trend", "trend2"
-    ))
+    -- 2      3         4         5          6          7          8          9         10
+    , "mid", "price1", "price2", "trendA1", "trendB1", "trendA2", "trendB2", "alphaA", "alphaB"
+    )
 
 local ln = 0
 
@@ -201,17 +121,8 @@ for line in io.stdin:lines() do
     ln = ln + 1
     if success then
         normalize(ev)
-        table.insert(window, ev)
-        while #window > windowSize do
-            processLine(window)
-        end
+        processEvent(ev)
     else
-        io.stderr:write( string.format("Error parsing line %d, erroneous line is:\n%s\n", ln, line) )
+        EPrint("Error parsing line %d, erroneous line is:\n%s\n", ln, line)
     end
 end
-
-while #window > 0 do
-    processLine(window)
-end
-
-

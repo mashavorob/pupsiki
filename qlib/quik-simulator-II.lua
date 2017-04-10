@@ -25,6 +25,7 @@ local etc =
     { account = "SPBFUT005eC"
     , firmid =  "SPBFUT589000"
 
+--    , asset = 'SiH7'
     , asset = 'SiM7'
 --    , asset = 'RIM7'
     , class = "SPBFUT"

@@ -13,7 +13,6 @@
 
 local q_config = require("qlib/quik-etc")
 local q_fname = require("qlib/quik-fname")
-local q_log = require("qlib/quik-logger")
 local q_table = require("qlib/quik-table")
 
 local q_runner = {}
@@ -24,20 +23,9 @@ function q_runner.create(strategy, etc)
         , etc = q_config.create
             { asset = "RIZ5"
             , class = "SPBFUT"
-            , logs =
-                { -- ordersLog = "logs/orders[L2-SPBFUT-RIZ5]-2015-11-11.log",
-                  -- replyLog  = "logs/orders-replies[L2-SPBFUT-RIZ5]-2015-11-11.log",
-                  -- tradesLog = "logs/trade-events[L2-SPBFUT-RIZ5]-2015-11-11.log" ,
-                  -- allTradesLog = "logs/all-trade-events[L2-SPBFUT-RIZ5]-2015-11-11.log" ,
-                }
             , account = "SPBFUT005B2"
             }
-        , logs =
-            { ordersLog = false
-            , replyLog = false
-            , tradesLog = false
-            , allTradesLog = false
-            }
+        , logFile = false
         , day = false
         , qtable = false
         }
@@ -46,12 +34,7 @@ function q_runner.create(strategy, etc)
     self.strategy = strategy
     self.etc = q_config.create( self.etc )
     self.qtable = q_table.create(strategy.title .. ".wpos", strategy.title, strategy.ui_mapping)
-    self.etc.logs = {
-        ordersLog = "logs/orders[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
-        replyLog  = "logs/orders-replies[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
-        tradesLog = "logs/trade-events[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
-        allTradesLog = "logs/all-trade-events[L2-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "]-%Y-%m-%d.log",
-    }
+    self.etc.logFileName = "logs/eventlog-" .. strategy.etc.class .. "-" .. strategy.etc.asset .. "-%Y-%m-%d.log"
 
     etc = etc or { }
     self.etc:merge(etc)
@@ -83,33 +66,14 @@ local function enrichRecord(record)
     record["unix-time"] = tstamp
 end
 
-local logColumns = {
-    ordersLog = {"date-time", "unix-time", 
-        "TRANS_ID", "TRANS_CODE", "SECCODE", "CLASSCODE", "ACTION", "ACCOUNT", "TYPE", 
-        "OPERATION", "EXECUTE_CONDITION", "QUANTITY", "PRICE", "status"},
-    replyLog = {"date-time", "unix-time", "trans_id", "status", "time", "uid",
-        "flags", "server_trans_id", "order_num", "price", "quantity", "balance", "account", 
-        "class_code", "sec_code"},
-    tradesLog = {"date-time", "unix-time", "event-tstamp", "delay",
-        "trade_num", "order_num", "account", "price", "qty", "value", "accruedint", "yield", "settlecode",
-        "flags", "price2", "block_securities", "block_securities", "exchange_comission", 
-        "tech_center_comission", "sec_code", "class_code"},
-    allTradesLog = {"date-time", "unix-time",
-        "trade_num", "flags", "price", "qty", "value", "accruedint", "yield", "settlecode", 
-        "sec_code", "class_code"},
-}
-
-
 function q_runner:checkLogs()
-    for log, fname in pairs(self.etc.logs) do
-        fname = q_fname.normalize(os.date(fname))
-        if not self.logs[log] or fname ~= self.logs[log].getFileName() then
-            local oldLog = self.logs[log]
-            self.logs[log] = q_log.create(fname, logColumns[log])
-            if oldLog then
-                oldLog.close()
-            end
+    local fname = q_fname.normalize(os.date(self.etc.logFileName))
+    if not self.logFile or not self.logFileName or self.logFileName ~= fname then
+        if self.logFile then
+            self.logFile:close()
         end
+        self.logFileName = fname
+        self.logFile = io.open(fname, "a")
     end
 end
 
@@ -139,17 +103,34 @@ end
 function q_runner:onAllTrade(trade)
     enrichRecord(trade)
     self.strategy:onAllTrade(trade)
-    if self.logs.allTradesLog then
-        self.logs.allTradesLog.write(trade)
-    end
-    self:logStatus()
 end
 
 function q_runner:onTransReply(reply)
     enrichRecord(reply)
     self.strategy:onTransReply(reply)
-    if self.logs.replyLog then
-        self.logs.replyLog.write(reply)
+    if self.logFile then
+        self.logFile:write(string.format("transReply trans_id=%d status=%d order_num=%s\n"
+            , reply.trans_id
+            , reply.status
+            , tostring(reply.order_num)
+            ))
+    end
+    self:logStatus()
+end
+
+function q_runner:onOrder(data)
+    enrichRecord(data)
+    self.strategy:onOrder(data)
+    if self.logFile then
+        self.logFile:write(string.format("onOrder %s %d@%.4f trans_id=%d order_num=%d balance=%d active=%s\n"
+            , (bit.band(data.flags, 4) ~= 0) and "SELL" or "BUY"
+            , data.qty
+            , data.price
+            , data.trans_id
+            , data.order_num
+            , data.balance
+            , (bit.band(data.flags, 1) ~= 0) and "True" or "False"
+            ))
     end
     self:logStatus()
 end
@@ -162,8 +143,13 @@ function q_runner:onTrade(trade)
         trade["event-tstamp"] = self.tstamp
         trade.delay = os.time(trade.datetime) + trade.datetime.ms/1000 - self.tstamp
     end
-    if self.logs.tradesLog then
-        self.logs.tradesLog.write(trade)
+    if self.logFile then
+        self.logFile:write(string.format("trade %.0f@%.4f trans_id=%d order_num=%d trade_num=%d\n"
+            , trade.qty, trade.price
+            , trade.trans_id
+            , trade.order_num
+            , trade.trade_num
+            ))
     end
 end
 
@@ -181,10 +167,8 @@ function q_runner:isClosed()
 end
 
 function q_runner:onClose()
-    for _, log in pairs(self.logs) do
-        if log then 
-            log.close()
-        end
+    if self.logFile then
+        self.logFile:close()
     end
 end
 

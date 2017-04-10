@@ -1,6 +1,6 @@
 --[[
 #
-# Стратегия на скользящем среднем
+# Стратегия скальпер
 #
 # vi: ft=lua:fenc=cp1251 
 #
@@ -11,100 +11,64 @@
 # or enable modeline in your .vimrc
 ]]
 
+
 local q_config = require("qlib/quik-etc")
 local q_order = require("qlib/quik-order")
 local q_utils = require("qlib/quik-utils")
 local q_time = require("qlib/quik-time")
+local q_bricks = require("qlib/quik-bricks")
+local q_base_strategy = require("qlib/quik-base-strategy")
 
-local q_averager = 
-    { etc =  -- master configuration
-        -- Главные параметры, задаваемые в ручную
-        { asset = "SiH7"                 -- бумага
-        , class = "SPBFUT"               -- класс
-        , title = "qaverager - [SiH7]"   -- заголовок таблицы
+local q_triggerThreshold = 0.1
 
-        -- Параметры вычисляемые автоматически
-        , account = "SPBFUT005eC"
-        , firmid =  "SPBFUT589000"
-
-        , priceStepSize = 1              -- granularity of price (minimum price shift)
-        , priceStepValue = 1             -- price of price step (price of minimal price shift)
-        , dealCost = 0.5                 -- биржевой сбор
-
-        -- Параметры задаваемые вручную
-        , brokerComission = 1            -- коммисия брокера
-        , absPositionLimit = 1           -- максимальная приемлемая позиция (абсолютное ограничение)
-        , relPositionLimit = 0.6         -- максимальная приемлемая позиция по отношению к размеру счета
-
-        , maxLoss = 1000                 -- максимальная приемлимая потеря
-
+local q_scalper =
+     -- master configuration
+    { etc =
         -- Параметры стратегии
-        , avgFactorSpot   = 1400         -- коэффициент осреднения спот
-        , avgFactorTrend2 = 1000         -- коэфициент осреднения волатильности
+        { avgFactorFast     = 100       -- коэффициент осреднения быстрый
+        , avgFactorSlow     = 2800      -- коэфициент осреднения медленый
+        , historyLen        = 250       -- длина истории для вычисления локальных экстремумов
+        , sensitivity       = 0         -- порог чувствительности
+        , saturation        = 12        -- порог насыщения
+        , enterSpread       = -2        -- отступ от края стакана для открытия позиции
 
-        -- Вспомогательные параметры
-        , enterSpread = -1               -- отступ от края стакана для открытия позиции
-
-        , avgFactorDelay = 20            -- коэффициент осреднения задержек Quik
-
-        
         , params = 
-            { { name="avgFactorSpot",   min=1, max=1e32, step=10, precision=1 }
-            , { name="avgFactorTrend2", min=1, max=1e32, step=10, precision=1 }
-            , { name="enterSpread", min=-100, max=100, step=1, precision=1 }
+            { { name="avgFactorFast",  min=1,    max=1e5, step=10,  precision=1    }
+            , { name="avgFactorSlow",  min=1,    max=1e5, step=10,  precision=1    }
+            , { name="historyLen",     min=3,    max=1e5, step=10,  precision=1    }
+            , { name="sensitivity",    min=0,    max=1e5, step=0.1, precision=0.01 }
+            , { name="saturation",     min=0,    max=1e5, step=5,   precision=1    }
+            , { name="enterSpread",    min=-100, max=100, step=1,   precision=1    }
             } 
-        -- расписание работы
-        , schedule = 
-            { q_time.interval("10:00", "12:55") -- 10:01 - 12:55
-            , q_time.interval("13:05", "13:58") -- 13:01 - 13:55
-            , q_time.interval("14:05", "15:44") -- 14:16 - 15:45
-            , q_time.interval("16:01", "18:50") -- 16:01 - 18:55
-            , q_time.interval("19:01", "21:55") -- 19:01 - 21:55
-            }
         }
 
         , ui_mapping =
             { { name="position", title="Позиция", ctype=QTABLE_DOUBLE_TYPE, width=12, format="%.0f" }
             , { name="targetPos", title="Рас.позиция", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" }
             , { name="spot", title="Цена", ctype=QTABLE_STRING_TYPE, width=22, format="%s" }
-            , { name="trend", title="Тренд", ctype=QTABLE_STRING_TYPE, width=15, format="%s" }
             , { name="margin", title="Маржа", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.02f" }
             , { name="comission", title="Коммисия", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.02f" }
             , { name="lotsCount", title="Контракты", ctype=QTABLE_DOUBLE_TYPE, width=15, format="%.0f" }
             , { name="balance", title="Доход/Потери", ctype=QTABLE_STRING_TYPE, width=25, format="%s" }
-            , { name="ordersLatencies", title="Задер.заявок (ms)", ctype=QTABLE_STRING_TYPE, width=20, format="%s" }
             , { name="state", title="Состояние", ctype=QTABLE_STRING_TYPE, width=40, format="%s" }
             , { name="lastError", title="Результат последней операции", ctype=QTABLE_STRING_TYPE, width=45, format="%s" }
         }
+
+        , PHASE_TRADING = 4
+        , PHASE_PRICE_CHANGE  = 5
     }
 
-_G["quik-averager"] = q_averager
+function q_scalper.create(etc)
 
-local strategy = {}
+    local self = q_base_strategy.create("averager", q_scalper.etc, etc)
 
-local HISTORY_TO_ANALYSE    = 30000
-local MIN_HISTORY           = 300
+    self.inherited = getmetatable(q_scalper).__index
 
-local PHASE_INIT                = 1
-local PHASE_WAIT                = 2
-local PHASE_HOLD                = 3
-local PHASE_CLOSE               = 4
-local PHASE_PRICE_CHANGE        = 5
-local PHASE_CANCEL              = 6
-
-local WAIT_UNTIL = 0.5
-
-function q_averager.create(etc)
-
-    local self = 
-        { title = "averager"
-        , etc = q_config.create(q_averager.etc)
-        , ui_mapping = q_averager.ui_mapping
-        , ui_state =
+    self.ui_mapping = q_scalper.ui_mapping
+    self.ui_state =
             { position = 0
             , targetPos = 0
             , spot = "--"
-            , trend = "--"
             , margin = 0
             , comission = 0
             , lotsCount = 0
@@ -113,464 +77,209 @@ function q_averager.create(etc)
             , state = "--"
             , lastError = "--" 
             }
-        , state =
-            { halt = false   -- immediate stop
-            , pause = true   -- temporary stop
-            , cancel = true  -- closing current position
-
-            , phase = PHASE_INIT
-
-            -- profit/loss
-            , balance =
-                { atStart = 0
-                , maxValue = 0
-                , currValue = 0
-                }
-
             -- market status
-            , market =
-                { bid = 0
-                , offer = 0
-                , mid = 0
-                , avgMid = false
-                , trend = 0
-                , trend2 = 0
-                , trigger = 0
-                }
-
-            , targetPos = 0
-            , position = 0
-            
-            , order = { }
-            , state = "--"
-            , count = -100
+    self.state.market =
+            { bid = 0
+            , offer = 0
+            , mid = 0
+            , trend = 0
+            , trigger = 0
+            , pricer = q_bricks.PriceTracker.create()
+            , ma_fast = q_bricks.MovingAverage.create(self.etc.avgFactorFast)
+            , ma_slow = q_bricks.MovingAverage.create(self.etc.avgFactorSlow)
+            , trend2 = q_bricks.Trend.create(self.etc.historyLen)
+            , alpha = q_bricks.AlphaByTrend.create(self.etc.saturation, self.etc.sensitivity)
             }
-        }
 
-    if etc then
-        self.etc.account = etc.account or self.etc.account
-        self.etc.firmid = etc.firmid or self.etc.firmid
-        self.etc.asset = etc.asset or self.etc.asset
-        self.etc.class = etc.class or self.etc.class
-        self.etc:merge(etc)
-    end
+    self.state.targetPos = 0
+    self.state.position = 0
+    self.state.state = "--"
 
-    setmetatable(self, { __index = strategy })
-
-    self.title = string.format( "%s - [%s]"
-                              , self.title
-                              , self.etc.asset
-                              )
-    if global_suffix then
-        self.title = self.title .. "-" .. tostring(global_suffix)
-    end
+    setmetatable(self, { __index = q_scalper })
 
     return self
 end
 
-function strategy:checkSchedule()
-    local now = quik_ext.gettime()
-    for _,period in ipairs(self.etc.schedule) do
-        if period:isInside(now) then
-            return true
+function q_scalper:init()
+    q_base_strategy.init(self)
+end
+
+function q_scalper:updatePosition()
+
+    local state = self.state
+    local etc = self.etc
+    local market = state.market
+    if not market.ma_fast.val then
+        return
+    end
+
+    -- check state
+    if state.cancel or state.pause or state.halt then
+        self:Print("updatePosition() stop due to: state.cancel=%s state.pause=%s state.halt=%s",
+            state.cancel, state.pause, state.halt)
+        return
+    end
+
+    local phase = self:checkSchedule()
+    if not phase then
+        return
+    end
+
+    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
+
+    if state.order:isDeactivating() then
+        state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
+    end
+
+    local pending = state.order:isPending()
+    local diff = state.targetPos - counters.position
+    local absLimit = 2*etc.absPositionLimit
+    local relLimit = math.min(1, 2*etc.relPositionLimit)
+    local lotSize = self:getLimit(absLimit, relLimit)
+    assert(lotSize > 0)
+
+    if not state.activeCount then
+        state.activeCount = 0
+    end
+
+    if state.order:isActive() then
+        -- unreachable, here is a trap
+        state.activeCount = state.activeCount or 0
+        state.activeCount = state.activeCount + 1
+        assert(state.activeCount < 10000)
+        state.waitForFairPrice = false
+        state.state = "Ожидание исполнения заявки"
+    elseif state.order:isPending() then
+        state.state = "Отправка заявки"
+    elseif not state.order:isPending() then
+        lotSize = math.min(math.abs(diff), lotSize)
+        local spread = (diff > 0) and -etc.enterSpread or etc.enterSpread
+        local fairPrice = math.floor(market.ma_fast.val/etc.priceStepSize + 0.5 + spread)*etc.priceStepSize
+
+        if diff > 0 and market.offer <= fairPrice then
+            state.state = (state.targetPos == 0) and "Ликивидация позиции" or "Открытие длинной позиции"
+            local price = market.offer + etc.priceStepSize
+            self:Print("Enter long at: %d@%f bid=%.0f offer=%.0f market.mid=%.0f ma_fast.val=%.2f"
+                , lotSize, price
+                , market.bid
+                , market.offer
+                , market.mid
+                , market.ma_fast.val
+                )
+            local res, err = state.order:send('B', price, lotSize, "KILL_BALANCE")
+            self:checkStatus(res, err)
+            state.buyPrice = price
+            state.waitForFairPrice = false
+            state.hold = false
+        elseif diff < 0 and market.bid >= fairPrice then
+            state.state = (state.targetPos == 0) and "Ликивидация позиции" or "Открытие короткой позиции"
+            local price = market.bid - etc.priceStepSize
+            self:Print("Enter short at: %d@%f bid=%.0f offer=%.0f mid=%.0f ma_fast.val=%.2f"
+                , lotSize, price
+                , market.bid
+                , market.offer
+                , market.mid
+                , market.ma_fast.val
+                )
+            local res, err = state.order:send('S', price, lotSize, "KILL_BALANCE")
+            self:checkStatus(res, err)
+            state.sellPrice = price
+            state.waitForFairPrice = false
+            state.hold = false
+        elseif diff == 0 then
+            if market.trigger <= q_triggerThreshold then
+                self.state.state = string.format("Недостаточно данных (%.3f)", market.trigger)
+            else
+                state.state = "Удержание позиции"
+            end
+            state.waitForFairPrice = false
+            if not state.hold then
+                self:Print("hold position %d", state.targetPos)
+                state.hold = true
+            end
+        elseif diff ~= 0 then
+            state.state = "Ожидание цены"
+            if not state.waitForFairPrice then
+                state.hold = false
+                state.waitForFairPrice = true
+                self:Print("waiting for fair price %s@%s", (diff > 0) and "BUY" or "SELL", q_base_strategy.formatValue(fairPrice))
+            end
         end
     end
-    return false
 end
 
-function strategy:isEOD()
-    local now = quik_ext.gettime()
-    local timeLeft = self.etc.schedule[#self.etc.schedule]:getTimeLeft(now)
-    return timeLeft < 60*5
+function q_scalper:onTransReply(reply)
+    self:Print("onTransReply(status=%s, result_msg='%s')", tostring(reply.status), reply.result_msg or "") 
+    self.inherited.onTransReply(self, reply)
 end
 
-function strategy:getLimit(absLimit, relLimit)
-    
-    absLimit = absLimit or self.etc.absPositionLimit
-    relLimit = math.min(1, relLimit or self.etc.relPositionLimit)
-
-
-    assert(absLimit)
-    assert(relLimit)
-    local moneyLimit = q_utils.getMoneyLimit(self.etc.account)
-    assert(moneyLimit)
-    moneyLimit = moneyLimit*relLimit
-    local buyLimit = math.floor(moneyLimit/q_utils.getBuyDepo(self.etc.class, self.etc.asset))
-    local sellLimit = math.floor(moneyLimit/q_utils.getBuyDepo(self.etc.class, self.etc.asset))
-    return math.min(absLimit, math.min(buyLimit, sellLimit))
-end
-
-function strategy:getMinTickCount()
-    return math.max(self.etc.avgFactorSpot, self.etc.avgFactorTrend)/4
-end
-
-function strategy:updateParams()
-    self.etc.priceStepSize = tonumber(getParamEx(self.etc.class, self.etc.asset, "SEC_PRICE_STEP").param_value)
-    self.etc.priceStepValue = tonumber(getParamEx(self.etc.class, self.etc.asset, "STEPPRICE").param_value)
-    self.etc.dealCost = tonumber(getParamEx(self.etc.class, self.etc.asset, "EXCH_PAY").param_value)
-    assert(self.etc.priceStepSize > 0, "priceStepSize(" .. self.etc.asset .. ") = " .. self.etc.priceStepSize)
-    assert(self.etc.priceStepValue > 0, "priceStepValue(" .. self.etc.asset .. ") = " .. self.etc.priceStepValue)
-end
-
-function strategy:calcMargin()
-    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
-    return counters.margin + counters.position*settleprice/self.etc.priceStepSize*self.etc.priceStepValue
-end
-
-function strategy:calcBalance()
-    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
-    local balance = counters.margin - counters.comission - counters.contracts*self.etc.brokerComission
-    balance = balance + counters.position*settleprice/self.etc.priceStepSize*self.etc.priceStepValue 
-    return balance
-end
-
-function strategy:init()
-    q_order.init()
-
-    self.etc.account = q_utils.getAccount() or self.etc.account
-    self.etc.firmid = q_utils.getFirmID() or self.etc.firmid
-
-    self.etc.limit = self:getLimit()
-    self.state =
-            { halt = false   -- immediate stop
-            , pause = true   -- temporary stop
-            , cancel = true  -- closing current position
-
-            , phase = PHASE_INIT
-
-            -- profit/loss
-            , balance =
-                { atStart = 0
-                , maxValue = 0
-                , currValue = 0
-                }
-
-            -- market status
-            , market =
-                { bid = 0
-                , offer = 0
-                , mid = 0
-                , avgMid = false
-                , trend = 0
-                , trend2 = 0
-                , trigger = 0
-                }
-
-            , targetPos = 0
-            , position = 0
-            
-            , order = { }
-            , state = "--"
-            }
-    self.state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-    self.state.refPrice = self.state.market.mid
-
-    -- initial counters and position
-    local settleprice = q_utils.getSettlePrice(self.etc.class, self.etc.asset)
-    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    counters.position = q_utils.getPos(self.etc.asset)
-    counters.margin = -counters.position*settleprice
-
-    local balance = self:calcBalance()
-    self.state.balance.atStart = balance
-    self.state.balance.maxValue = balance
-    self.state.balance.currValue = balance
-
-    self:updateParams()
-
-    Subscribe_Level_II_Quotes(self.etc.class, self.etc.asset)
-    self.state.phase = PHASE_WAIT
+function q_scalper:onTrade(trade)
+    self.inherited.onTrade(self, trade)
     self:calcPlannedPos()
+    self:updatePosition()
 end
 
-function strategy:onStartTrading()
-    self.state.pause = false
-    self.state.halt = false
-    self.state.cancel = false
-end
-
-function strategy:isHalted()
-    return self.state.halt
-end
-
-function strategy:onStartStopCallback()
-    self.state.pause = not self.state.pause
-    if self.state.pause then
-        self.state.cancel = true
-    end
-end
-
-function strategy:onHaltCallback()
-    self.state.halt = not self.state.halt
-end
-
-function strategy:onTransReply(reply)
-    local status, delay, err = q_order.onTransReply(reply)
-
-    if delay then
-        local k= 1/(1 + self.etc.avgFactorDelay)
-        self.state.ordersDelay = self.state.ordersDelay or delay
-        self.state.ordersDelay = self.state.ordersDelay + k*(delay - self.state.ordersDelay)
-        local sigma = math.pow(self.state.ordersDelay - delay, 2)
-        self.state.ordersDelayDev2 = self.state.ordersDelayDev2 or 0
-        self.state.ordersDelayDev2 = self.state.ordersDelayDev2 + k*(sigma - self.state.ordersDelayDev2)
-        self.state.ordersDelayDev = math.sqrt(self.state.ordersDelayDev2)
-    end
-    if not status then 
-        self.ui_state.lastError = err
-    end
-    self:onMarketShift()
-end
-
-function strategy:onTrade(trade)
-    self:Print(string.format("onTrade(%d@%f)", trade.qty, trade.price))
-    self.now = os.time(trade.datetime)
-    q_order.onTrade(trade)
-end
-
-function strategy:onAllTrade(trade)
-    local receivedAt = quik_ext.gettime()
-    local sentAt = os.time(trade.datetime) + trade.datetime.mcs/1e6
-    local delay = receivedAt - sentAt
-
-    local k= 1/(1 + self.etc.avgFactorDelay)
-    self.state.tradesDelay = self.state.tradesDelay or delay
-    self.state.tradesDelay = self.state.tradesDelay + k*(delay - self.state.tradesDelay)
-    local sigma = math.pow(self.state.tradesDelay - delay, 2)
-    self.state.tradesDelayDev2 = self.state.tradesDelayDev2 or 0
-    self.state.tradesDelayDev2 = self.state.tradesDelayDev2 + k*(sigma - self.state.tradesDelayDev2)
-    self.state.tradesDelayDev = math.sqrt(self.state.tradesDelayDev2)
-end
-
-function strategy:checkL2()
-    local bid, offer, l2 = self:getQuoteLevel2()
-    if not bid or not offer then
-        return false
-    end
-
-    self:calcMarketParams(bid, offer, l2)
-    return true
-end
-
-function strategy:onQuote(class, asset)
+function q_scalper:onQuote(class, asset)
     assert(class)
     assert(asset)
     if class ~= self.etc.class or asset ~= self.etc.asset then
         return
     end
 
-    if self:checkL2() then
-        self:calcPlannedPos()
-        self:onMarketShift()
+    local etc = self.etc
+    local state = self.state
+    local market = state.market
+
+    local l2 = getQuoteLevel2(etc.class, etc.asset)
+    market.pricer:onQuote(l2)
+    market.bid = market.pricer.bid
+    market.offer = market.pricer.ask
+    market.mid = market.pricer.mid
+    if not market.mid then
+        return
     end
+    market.ma_fast:onValue(market.mid)
+    market.ma_slow:onValue(market.mid)
+    market.trend = market.ma_fast.val - market.ma_slow.val
+    market.trend2:onValue(market.trend)
+    market.trigger = market.trigger + market.ma_slow.k*(1 - market.trigger)
+    market.alpha:onValue(market.trend, market.trend2.trend)
+
+    self:calcPlannedPos()
+    self:updatePosition()
+
 end
 
-function strategy:onIdle(now)
+function q_scalper:onAllTrade(trade)
+end
 
-    self.now = quik_ext.gettime()
-    q_order.onIdle()
-    self:onMarketShift()
+function q_scalper:onIdle(now)
+    self.inherited.onIdle(self, now)
+
+    self:updatePosition()
 
     local state = self.state
     local ui_state = self.ui_state
     local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
     
-    if state.order:isDeactivating() then
-        -- discard deactivating order
-        local order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-        -- preserve refernce data
-        order.operation = state.order.operation
-        order.price = state.order.price
-        -- discard
-        state.order = order
-    end
-
-    -- kill position
-    if state.cancel then
-        ui_state.state = "Ликвидация"
-
-        local pending, active = self:checkOrders()
-        
-        if active and not pending then
-            local res, err = self:killOrders()
-            self:checkStatus(res, err)
-        end
-
-        if not active and not pending then
-            if not self:checkSchedule() then
-                state.state = "Остановка по расписанию"
-            elseif counters.position > 0 then
-                self.etc.minPrice = tonumber(getParamEx(self.etc.class, self.etc.asset, "PRICEMIN").param_value)
-                assert(self.etc.minPrice > 0, "Неверная минимальная цена: " .. self.etc.minPrice .. "\n" .. debug.traceback())
-                state.phase = HASE_CANCEL
-                local res, err = state.order:send("S", self.etc.minPrice, counters.position)
-                self:checkStatus(res, err)
-                return
-            elseif counters.position < 0 then
-                self.etc.maxPrice = tonumber(getParamEx(self.etc.class, self.etc.asset, "PRICEMAX").param_value)
-                assert(self.etc.maxPrice > 0, "Неверная максимальная цена: " .. self.etc.maxPrice .. "\n" .. debug.traceback())
-                state.phase = PHASE_CANCEL
-                local res, err = state.order:send("B", self.etc.maxPrice, -counters.position)
-                self:checkStatus(res, err)
-                return
-            else
-                if state.phase ~= PHASE_WAIT then
-                    self:Print("switching to PHASE_WAIT")
-                end
-                state.phase = PHASE_WAIT
-                state.cancel = false
-
-            end
-        end
-    end
-
     ui_state.position = counters.position
     ui_state.targetPos = state.targetPos
 
-    local function formatVal(val)
-        val = val or 0
-        if val == 0 then
-            return "0"
-        end
-        local aval = math.abs(val)
-        local fmt = "%.f"
-        if aval < 1e-3 then
-            fmt = "%.2e"
-        elseif aval < 1e-2 then
-            fmt = "%.4f"
-        elseif aval < 1e-1 then
-            fmt = "%.3f"
-        elseif aval < 1 then
-            fmt = "%.2f"
-        elseif aval < 1e2 then
-            fmt = "%.1f"
-        end
-        return string.format(fmt, val)
-    end
+    local format = self:getPriceFormat()
 
-    local format = "%.0f"
-    if self.etc.priceStepSize < 1e-6 then
-        format = "%0.8f"
-    elseif self.etc.priceStepSize < 1e-5 then
-        format = "%0.7f"
-    elseif self.etc.priceStepSize < 1e-4 then
-        format = "%0.6f"
-    elseif self.etc.priceStepSize < 1e-3 then
-        format = "%0.5f"
-    elseif self.etc.priceStepSize < 1e-2 then
-        format = "%0.4f"
-    elseif self.etc.priceStepSize < 1e-1 then
-        format = "%0.3f"
-    elseif self.etc.priceStepSize < 1 then
-        format = "%0.2f"
-    end
-
-    ui_state.spot = string.format(format, (state.market.avgMid or 0))
-    ui_state.trend = formatVal(state.market.trend2)
-
-    if self:checkSchedule() and isConnected() ~= 0 then
-        local balance = self:calcBalance()
-        state.balance.maxValue = math.max(state.balance.maxValue, balance)
-        state.balance.currValue = balance
-    end
-
-    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    ui_state.margin = self:calcMargin()
-    ui_state.comission = counters.comission
-    ui_state.lotsCount = counters.contracts
-    ui_state.balance = string.format( "%.02f / %.02f"
-                                    , state.balance.currValue - state.balance.atStart
-                                    , state.balance.currValue - state.balance.maxValue
-                                    )
-
-    if pending then
-        ui_state.state = "Отправка заявки"
-    elseif active then
-        ui_state.state = "Ожидание исполнения заявки"
-    elseif state.pause then
-        ui_state.state = "Пауза"
-    elseif state.halt then
-        ui_state.state = "Остановка"
-    elseif not self:checkSchedule() then
-        ui_state.state = "Остановка по расписанию"
-    else
-        ui_state.state = state.state
-    end
-
-    if state.ordersDelay then
-        ui_state.ordersLatencies = string.format("%.0f / %.0f", state.ordersDelay*1000, (state.ordersDelayDev or 0)*1000)
-    else
-        ui_state.ordersLatencies = "-- / --"
-    end
+    ui_state.spot = string.format(format, state.market.mid or 0)
+    ui_state.dev = self.formatValue(state.market.dev2)
 
     ui_state.lastError = "--"
     self:Print("onIdle(): ui_state.state='%s'", ui_state.state)
 end
 
-function strategy:getQuoteLevel2()
-    local l2 = getQuoteLevel2(self.etc.class, self.etc.asset)
-
-    local function prepareQuotes(count, qq)
-        count = tonumber(count)
-        for i=1,count do
-            qq[i].price = tonumber(qq[i].price)
-            qq[i].quantity = tonumber(qq[i].quantity)
-        end
-        return count
-    end
-    l2.bid_count = prepareQuotes(l2.bid_count, l2.bid)
-    l2.offer_count = prepareQuotes(l2.offer_count, l2.offer)
-
-    if l2.bid_count == 0 or l2.offer_count == 0 then
-        return
-    end
-
-    q_order.removeOwnOrders(l2)
-
-    local bid = l2.bid[l2.bid_count].price
-    local offer = l2.offer[1].price
-
-    return bid, offer, l2
-end
-
--- function calculates market parameters
-function strategy:calcMarketParams(bid, offer, l2)
-
-    local etc = self.etc
-    local state = self.state
-    local market = state.market
-
-    market.bid = bid
-    market.offer = offer
-    market.l2 = l2
-    local mid = (bid + offer)/2
-
-    local k1 = 1/(1 + etc.avgFactorSpot)
-    local k2 = 1/(1 + etc.avgFactorTrend2)
-    local k = math.min(k1, k2)
-
-    market.avgMid = market.avgMid or mid
-    
-    market.mid = mid
-    market.avgMid = market.avgMid + k1*(market.mid - market.avgMid)
-    
-    local trend = market.mid - market.avgMid
-    market.trend = market.trend + k1*(trend - market.trend)
-    
-    local trend2 = trend - market.trend
-    market.trend2 = market.trend2 + k2*(trend2 - market.trend2)
-
-    market.trigger = market.trigger + k*(1 - market.trigger)
-end
-
 -- function returns operation, price
-function strategy:calcPlannedPos()
+function q_scalper:calcPlannedPos()
     local etc = self.etc
     local state = self.state
     local market = state.market
-    
+   
     state.targetPos = 0
 
     local loss = state.balance.maxValue - state.balance.currValue
@@ -583,175 +292,74 @@ function strategy:calcPlannedPos()
         return
     end
 
-    if market.trigger <= WAIT_UNTIL then
-        self.state.state = "Недостаточно данных"
+    if market.trigger <= q_triggerThreshold then
+        self.state.state = string.format("Недостаточно данных (%.3f)", market.trigger)
         return
     end
-    if not self.triggerReported then
-        self.triggerReported = true
+    if state.phase == q_scalper.PHASE_READY then
+        state.phase = q_scalper.PHASE_TRADING
         self:Print("calcPlannedPos(): trigger activated")
     end
     if state.halt or state.pause or state.cancel then
         self:Print("calcPlannedPos(): state.halt=%s state.pause=%s state.cancel=%s",
-            tostring(state.halt), tostring(state.pause), tostring(state.cancel))
+            state.halt, state.pause, state.cancel)
         return
     end
 
-    if not self:checkSchedule() or self:isEOD() then
-        return
-    end
-
-    if market.trend > 0 then
-        state.targetPos = -1
-    elseif market.trend < 0 then
-        state.targetPos = 1
-    end
-
-    state.targetPos = state.targetPos*self:getLimit()
+    state.targetPos = self:getAlpha()*self:getLimit()
 end
 
-function strategy:killOrders()
+function q_scalper:getAlpha()
+    local etc = self.etc
+    local state = self.state
+    local market = state.market
+
+    local alpha = self.state.market.alpha.alpha
+    if market.trigger < q_triggerThreshold then 
+        alpha = 0
+    else
+        local phase = self:checkSchedule()
+        local sphase = (not phase) and "Closed" or (phase == self.CONTINUOUS_TRADING) and "Continuous trading" or "Closing"
+        if state.prev_phase ~= sphase then
+            self:Print("phase='%s' (%s)", sphase, tostring(phase))
+            state.prev_phase = sphase
+        end
+        if not phase or phase ~= self.CONTINUOUS_TRADING then
+            alpha = 0
+        end
+    end
+    self.state.market.alpha.alpha = alpha
+    return self.state.market.alpha.alpha
+end
+
+function q_scalper:killOrders()
     local state = self.state
     local res, err = true, ""
 
     if state.order:isActive() then
         res, err = state.order:kill()
     end
+
     return res, err
 end
 
-function strategy:checkOrders()
+function q_scalper:checkOrders()
     local state = self.state
 
     local pending = state.order:isPending()
     local active = state.order:isActive()
+
     return pending, active
 end
 
-function strategy:Print(fmt, ...)
-    --[[
-    local state = self.state
-    local market = state.market
-    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    local settleprice = market.mid--q_utils.getSettlePrice(self.etc.class, self.etc.asset)
-    local balance = counters.margin - counters.comission - counters.contracts*self.etc.brokerComission
-    balance = balance + counters.position*settleprice/self.etc.priceStepSize*self.etc.priceStepValue 
-    local now = quik_ext.gettime()
-    local ms = math.floor((now - math.floor(now))*1000)
-    local args = {...}
-
-    local preamble = string.format("%6.0f %s.%03d (%4.0f, %2d)", market.mid, os.date("%H:%M:%S", now), ms, balance, counters.position)
-    local message = string.format(fmt, unpack(args))
-    print(string.format("%s: %s", preamble, message))
-    ]]
+function q_scalper:onDisconnected()
 end
 
-function strategy:calcSpread(spread)
-    local etc = self.etc
-    local market = self.state.market
-    local buyPrice, sellPrice = 0, 0
-    if spread == 0 then
-        buyPrice = math.floor(market.mid/etc.priceStepSize)*etc.priceStepSize
-        sellPrice = math.ceil(market.mid/etc.priceStepSize)*etc.priceStepSize
-    elseif spread < 0 then
-        buyPrice = market.offer - (spread + 1)*etc.priceStepSize
-        sellPrice = market.bid + (spread + 1)*etc.priceStepSize
-    else
-        buyPrice = market.bid - (spread - 1)*etc.priceStepSize
-        sellPrice = market.offer + (spread - 1)*etc.priceStepSize
-    end
-    return buyPrice, sellPrice
-end
-
-function strategy:onMarketShift()
-
-    local etc = self.etc
-    local state = self.state
-    local market = state.market
-    
-    -- check halts and pending orders
-    if self.state.halt or self.state.cancel or self.state.pause then
-        self:Print("onMarketShift() exit due to halt cancel or pause")
-        return
-    end
-
-    local pending, active = self:checkOrders()
-
-    if pending then
-        return
-    end
-    
-    prevPos = prevPos or 0
-    if state.targetPos ~= prevPos then
-        self:Print("onMarketShift(): state.targetPos = %s", tostring(state.targetPos))
-        prevPos = state.targetPos
-    end
-
-    local counters = q_order.getCounters(self.etc.account, self.etc.class, self.etc.asset)
-    local diff = (state.targetPos - counters.position)
-    local price = state.order.price or market.mid
-    local buyPrice, sellPrice = self:calcSpread(etc.enterSpread)
-
-    local res, err = true, ""
-
-    if active then
-        state.phase = PHASE_WAIT
-        state.state = "Ожидание исполнения ордера"
-        if (diff >= 0 and state.order.operation == 'S') or (diff <= 0 and state.order.operation == 'B') then
-            res, err = self:killOrders()
-            state.phase = PHASE_CANCEL
-            state.state = "Отмена ордера из-за изменения тренда"
-            self:Print("Cancel order due to trend changing")
-        end
-        self:checkStatus(res, err)
-        -- wait while the order is canceled
-        return
-    elseif diff ~= 0 then
-        state.phase = PHASE_WAIT
-        state.state = "Отправка ордера"
-        -- lot cannot be bigger
-        local lotSize = math.min(math.abs(diff), self:getLimit(2*etc.absPositionLimit, math.min(1, 2*etc.relPositionLimit)))
-        local res, err = true, ""
-        state.order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-        if diff < 0 then
-            self:Print("Enter short at: %d@%f", lotSize, sellPrice)
-            state.state = (state.targetPos < 0) and "Открытие шорт" or "Закрытие лонг"
-            res, err = state.order:send('S', sellPrice, lotSize)
-        else
-            self:Print("Enter long at: %d@%f", lotSize, buyPrice)
-            state.state = (state.targetPos > 0) and "Открытие лонг" or "Закрыте шорт"
-            res, err = state.order:send('B', buyPrice, lotSize)
-        end
-        state.refPrice = market.mid
-        self:checkStatus(res, err)
-    else
-        if market.trigger < WAIT_UNTIL then
-            state.state = string.format("Накопление данных (%3.0f%%)", market.trigger/WAIT_UNTIL*100)
-        else
-            state.state = string.format("Удержание позиции")
-        end
-    end
-end
-
-function strategy:onDisconnected()
-end
-
-function strategy:checkStatus(status, err)
-    if not status then
-        assert(err, "err is nil")
-        self.ui_state.lastError = "Ошибка: " .. tostring(err)
-        self.ui_state.state = "Приостановка (" .. self.state.state .. ")"
-        self.state.halt = true
-        return false
-    end    
-    self.ui_state.lastError = "OK"
-    return true
-end
-
-function strategy:killPosition()
+function q_scalper:killPosition()
     self:Print("killPosition()")
     assert(false)
     self.state.cancel = true
 end
 
-return q_averager
+setmetatable(q_scalper, { __index = q_base_strategy}) 
+return q_scalper

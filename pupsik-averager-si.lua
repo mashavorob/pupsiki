@@ -16,9 +16,15 @@ local etc =
     , firmid            = "==SPBFUT589000"
     , sname             = "quik-averager"
 
-    , asset             = 'SiH7'
+    , asset             = 'SiM7'
     , class             = "SPBFUT"
-    , avgFactorSpot     = 690  -- коэффициент осреднения спот
+    , avgFactorFast     = 100       -- коэффициент осреднения быстрый
+    , avgFactorSlow     = 2800      -- коэфициент осреднения медленый
+    , historyLen        = 250       -- длина истории для вычисления локальных экстремумов
+    , sensitivity       = 0         -- порог чувствительности
+    , saturation        = 12        -- порог насыщения
+    , enterSpread       = -2        -- отступ от края стакана для открытия позиции
+
     }
 
 local scriptFolder = false
@@ -78,6 +84,10 @@ end
 
 function OnTransReply(reply)
     strategyRunner:onTransReply(reply)
+end
+
+function OnOrder(data)
+    strategyRunner:onOrder(data)
 end
 
 function OnTrade(trade)

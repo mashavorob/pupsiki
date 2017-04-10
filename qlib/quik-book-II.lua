@@ -209,17 +209,25 @@ function book:onCorrectOrder(client, order, kill)
                                      , result_msg=""
                                      }
                                    )
-    q_order.client:pushOnTransReply( { trans_id = q_order.trans_id
-                                     , order_num = q_order.order_num
-                                     , status = q_order.status
-                                     , result_msg = ""
-                                     , flags = q_order.flags
-                                     , balance = q_order.balance
-                                     }
-                                   )
+    q_order:fireOnOrder()
 end
 
 local trade_num = 1
+
+local Order = {}
+
+function Order:fireOnOrder()
+    self.client:pushOnOrder( { trans_id = self.trans_id
+                             , self_num = self.self_num
+                             , flags = self.flags
+                             , balance = self.balance
+                             , price = self.price
+                             , qty = self.size
+                             , sec_code = self.seccode
+                             , class_code = self.classcode
+                             }
+                           )
+end
 
 function book:createOrder(client, order)
     -- make a copy
@@ -238,27 +246,9 @@ function book:createOrder(client, order)
     q_order.quantity = tonumber(q_order.QUANTITY)
     q_order.balance = q_order.quantity
     q_order.status = 0
+    setmetatable(q_order, {__index=Order})
 
     return q_order
-end
-
-function book:cleanupOrders(orders)
-    self.cleanpCount = self.cleanpCount or 0
-    if self.cleanpCount < 100 then
-        self.cleanpCount = self.cleanpCount + 1
-        return
-    end
-    self.cleanpCount = 0
-
-    local toRemove = {}
-    for i,o in ipairs(orders) do
-        if orders[i].killed then
-            table.insert(toRemove, 1, i)
-        end
-    end
-    for _,i in ipairs(toRemove) do
-        table.remove(orders,i)
-    end
 end
 
 function book:onNewOrder(client, order)
@@ -283,16 +273,21 @@ function book:onNewOrder(client, order)
                                          , order_num = q_order.order_num
                                          , status = 6
                                          , result_msg = "Not enough money"
-                                         , flags = 0
                                          , balance = 0
                                          }
                                        )
         return
     end
+    q_order.client:pushOnTransReply( { trans_id = q_order.trans_id
+                                     , order_num = q_order.order_num
+                                     , status = 0
+                                     , result_msg = ""
+                                     , balance = q_order.balance
+                                     }
+                                   )
     -- put order to table
     local orders = q_order.client:getOrders()
     table.insert(orders, q_order)
-    self:cleanupOrders(orders)
 
     -- process a new order
     local b = self:getBook(q_order.CLASSCODE, q_order.SECCODE)
@@ -313,14 +308,7 @@ function book:onNewOrder(client, order)
                 q_order.client:onQuoteChange(q_order, params, -q_order.quantity)
                 q_order.status = 3
                 q_order.flags = bit.band(q_order.flags, bit.bnot(mask.flags.ACTIVE))
-                q_order.client:pushOnTransReply( { trans_id = q_order.trans_id
-                                                 , order_num = q_order.order_num
-                                                 , status = q_order.status
-                                                 , result_msg = ""
-                                                 , flags = q_order.flags
-                                                 , balance = q_order.balance
-                                                 }
-                                               )
+                q_order:fireOnOrder(q_order)
                 return
             end
         end
@@ -362,20 +350,11 @@ function book:onNewOrder(client, order)
                                            , flags = crossOrder.flags
                                            , sec_code = crossOrder.SECCODE
                                            , class_code = crossOrder.CLASSCODE
-                                           , trans_id = crossOrder.trans_id
                                            , exchange_comission = exchange_comission
                                            , tech_center_comission = 0
+                                           , trans_id = crossOrder.trans_id
                                            }
                                          )
-            crossOrder.client:pushOnTransReply( { trans_id = crossOrder.trans_id
-                                                , order_num = crossOrder.order_num
-                                                , status = crossOrder.status
-                                                , result_msg = ""
-                                                , flags = crossOrder.flags
-                                                , balance = order.balance
-                                                }
-                                              )
-
             -- update order
             q_order.balance = q_order.balance - size
             if q_order.balance == 0 then
@@ -393,19 +372,11 @@ function book:onNewOrder(client, order)
                                         , flags = q_order.flags
                                         , sec_code = q_order.SECCODE
                                         , class_code = q_order.CLASSCODE
-                                        , trans_id = q_order.trans_id
                                         , exchange_comission = exchange_comission
                                         , tech_center_comission = 0
+                                        , trans_id = q_order.trans_id
                                         }
                                       )
-            q_order.client:pushOnTransReply( { trans_id = q_order.trans_id
-                                             , order_num = q_order.order_num
-                                             , status = q_order.status
-                                             , result_msg=""
-                                             , flags = q_order.flags
-                                             , balance = order.balance
-                                             }
-                                           )
         end
     elseif q_order.OPERATION == 'S' then
         bookSide = b.offer
@@ -424,14 +395,7 @@ function book:onNewOrder(client, order)
                 q_order.client:onQuoteChange(q_order, params, -q_order.quantity)
                 q_order.status = 3
                 q_order.flags = bit.band(q_order.flags, bit.bnot(mask.flags.ACTIVE))
-                q_order.client:pushOnTransReply( { trans_id = q_order.trans_id
-                                                 , order_num = q_order.order_num
-                                                 , status = q_order.status
-                                                 , result_msg = ""
-                                                 , flags = q_order.flags
-                                                 , balance = q_order.balance
-                                                 }
-                                               )
+                q_order:fireOnOrder()
                 return
             end
         end
@@ -471,20 +435,12 @@ function book:onNewOrder(client, order)
                                            , flags = crossOrder.flags
                                            , sec_code = crossOrder.SECCODE
                                            , class_code = crossOrder.CLASSCODE
-                                           , trans_id = crossOrder.trans_id
                                            , exchange_comission = exchange_comission
                                            , tech_center_comission = 0
+                                           , trans_id = crossOrder.trans_id
                                            }
                                          )
-            crossOrder.client:pushOnTransReply( { trans_id = crossOrder.trans_id
-                                                , order_num = crossOrder.order_num
-                                                , status = crossOrder.status
-                                                , result_msg=""
-                                                , flags = crossOrder.flags
-                                                , balance = order.balance
-                                                }
-                                              )
-
+            crossOrder:fireOnOrder()
             -- update order
             q_order.balance = q_order.balance - size
             if q_order.balance == 0 then
@@ -502,19 +458,12 @@ function book:onNewOrder(client, order)
                                         , flags = q_order.flags
                                         , sec_code = q_order.SECCODE
                                         , class_code = q_order.CLASSCODE
-                                        , trans_id = q_order.trans_id
                                         , exchange_comission = exchange_comission
                                         , tech_center_comission = 0
+                                        , trans_id = q_order.trans_id
                                         }
                                       )
-            q_order.client:pushOnTransReply( { trans_id = q_order.trans_id
-                                             , order_num = q_order.order_num
-                                             , status = q_order.status
-                                             , result_msg=""
-                                             , flags = q_order.flags
-                                             , balance = order.balance
-                                             }
-                                           )
+            q_order:fireOnOrder()
         end
     else
         -- report error
@@ -522,16 +471,11 @@ function book:onNewOrder(client, order)
     end
 
     if "KILL_BALANCE" == q_order.EXECUTE_CONDITION then
+        q_order.client:onQuoteChange(q_order, params, -q_order.balance)
         q_order.flags = bit.band(q_order.flags, bit.bnot(mask.flags.ACTIVE))
         q_order.status = 3
-        q_order.client:pushOnTransReply( { trans_id = q_order.trans_id
-                                         , order_num = q_order.order_num
-                                         , status = q_order.status
-                                         , result_msg=""
-                                         , flags = q_order.flags
-                                         , balance = order.balance
-                                         }
-                                       )
+        q_order.balance = 0
+        q_order:fireOnOrder()
         return
     end
     client.orders = client.orders or {}
@@ -548,17 +492,8 @@ function book:onNewOrder(client, order)
         bookSide[index].quantity = bookSide[index].quantity + q_order.balance
         table.insert(bookSide[index].orders, q_order)
     end
-    if q_order.balance == q_order.quantity then
-        -- the order has not been reported yet
-        q_order.client:pushOnTransReply( { trans_id = q_order.trans_id
-                                         , order_num = q_order.order_num
-                                         , status = q_order.status
-                                         , result_msg=""
-                                         , flags = q_order.flags
-                                         , balance = order.balance
-                                         }
-                                       )
-    end
+    -- the order has not been reported yet
+    q_order:fireOnOrder()
 end
 
 function book:onOrder(client, order)

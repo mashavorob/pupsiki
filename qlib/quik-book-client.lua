@@ -21,6 +21,10 @@ function client:pushOnTransReply(transReply)
     table.insert(self.events, { event="onTransReply", data=transReply })
 end
 
+function client:pushOnOrder(order)
+    table.insert(self.events, { event="onOrder", data=order })
+end
+
 function client:pushOnQuote(class, asset)
     table.insert(self.events, { event="onQuote", data={class=class, asset=asset} })
 end
@@ -47,6 +51,8 @@ function client:flushEvents()
             self:fireOnTrade(ev.data)
         elseif ev.event == "onTestOrder" then
             self:fireOnTestOrder(ev.data)
+        elseif ev.event == "onOrder" then
+            self:fireOnOrder(ev.data)
         else
             assert(false, "Unknown event type")
         end
@@ -71,6 +77,10 @@ end
 
 function client:fireOnTestOrder(order)
     self.cbs.onTestOrder(order)
+end
+
+function client:fireOnOrder(order)
+    self.cbs.onOrder(order)
 end
 
 function client:getTable(tableName)
@@ -230,6 +240,7 @@ function factory.create(book, strategy, limit)
         , onTransReply = function() end
         , onQuote = function() end
         , onTrade = function() end
+        , onOrder = function() end
         }
         
     next_id = next_id + 1
@@ -250,6 +261,7 @@ function factory.create(book, strategy, limit)
               end
             , onTrade = function(trade) strategy:onTrade(trade) end
             , onTestOrder = strategy["onTestOrder"] and function(order) strategy:onTestOrder(order) end or function() end
+            , onOrder = strategy["onOrder"] and function(order) strategy:onOrder(order) end or function() end
             }
         , tables = 
             { futures_client_holding = {}
