@@ -25,19 +25,31 @@ local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorFast     = 100       -- коэффициент осреднения быстрый
-        , avgFactorSlow     = 2800      -- коэфициент осреднения медленый
+        { avgFactorFast     = 2000      -- коэффициент осреднения быстрый
+        , avgFactorSlow     = 37500    -- коэфициент осреднения медленый
         , historyLen        = 250       -- длина истории для вычисления локальных экстремумов
-        , sensitivity       = 0         -- порог чувствительности
-        , saturation        = 12        -- порог насыщения
-        , enterSpread       = -2        -- отступ от края стакана для открытия позиции
+        , sensitivity       = 0.01      -- порог чувствительности
+        , saturation        = 5         -- порог насыщения
+        , enterSpread       = -99       -- отступ от края стакана для открытия позиции
 
         , params = 
-            { { name="avgFactorFast",  min=1,    max=1e5, step=10,  precision=1    }
-            , { name="avgFactorSlow",  min=1,    max=1e5, step=10,  precision=1    }
-            , { name="historyLen",     min=3,    max=1e5, step=10,  precision=1    }
-            , { name="sensitivity",    min=0,    max=1e5, step=0.1, precision=0.01 }
-            , { name="saturation",     min=0,    max=1e5, step=5,   precision=1    }
+            { { name="avgFactorFast",  min=1,    max=1e7, step=10,  precision=1    }
+            , { name="avgFactorSlow",  min=1,    max=1e7, step=10,  precision=1    }
+            , { name="historyLen",     min=3,    max=1e7, step=10,  precision=1    }
+            , { name="sensitivity"
+              , min=0
+              , max=1e5
+              , step=0.001
+              , precision=0.001
+              , get_max = function(self) return self.saturation end
+              }
+            , { name="saturation"
+              , min=0
+              , max=1e5
+              , step=5
+              , precision=1
+              , get_min = function(self) return self.sensitivity end
+              }
             , { name="enterSpread",    min=-100, max=100, step=1,   precision=1    }
             } 
         }

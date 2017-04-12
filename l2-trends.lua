@@ -33,17 +33,15 @@ end
 
 local xbit = bit or bit32
 
-local trendAvg1 = 250
-local trendAvg2 = 250
+local trendvg1 = 250
+local trendvg2 = 250
 
 local pricer = q_bricks.PriceTracker.create()
-local ma1 = q_bricks.MovingAverage.create(100)
-local ma2 = q_bricks.MovingAverage.create(3000)
-local ptrendB1 = q_bricks.Trend.create(trendAvg1)
-local ptrendA2 = q_bricks.Trend.create(trendAvg2)
-local ptrendB2 = q_bricks.Trend.create(trendAvg2)
-local alphaA = q_bricks.AlphaByTrend.create(12, 5)
-local alphaB = q_bricks.AlphaByTrend.create(0.01)
+local ma1 = q_bricks.MovingAverage.create(1000)
+local ma2 = q_bricks.MovingAverage.create(100000)
+local ptrend2 = q_bricks.Trend.create(250)
+local alpha = q_bricks.AlphaByTrend.create(5, 0.01)
+--local alpha = q_bricks.AlphaSimple.create(40, 5)
 
 local now = nil
 
@@ -58,11 +56,8 @@ function processEvent(ev)
 
         ma1:onValue(pricer.mid)
         ma2:onValue(pricer.mid)
-        ptrendB1:onValue(ma2.val)
-        ptrendA2:onValue(ma1.val - ma2.val)
-        ptrendB2:onValue(ptrendB1.trend)
-        alphaA:onValue(ma1.val - ma2.val, ptrendA2.trend)
-        alphaB:onValue(ptrendB1.trend, ptrendB2.trend)
+        ptrend2:onValue(ma1.val - ma2.val)
+        alpha:onValue(ma1.val - ma2.val, ptrend2.trend)
         changed = true
     elseif ev.event == "onAllTrade" then
         --trend:onAllTrade(ev.trade)
@@ -76,19 +71,16 @@ function processEvent(ev)
             { mid     = pricer.mid
             , price1  = ma1.val
             , price2  = ma2.val
-            , trendA1 = ma1.val - ma2.val
-            , trendB1 = ptrendB1.trend
-            , trendA2 = ptrendA2.trend
-            , trendB2 = ptrendB2.trend
-            , alphaA  = alphaA.alpha
-            , alphaB  = alphaB.alpha
+            , trend1 = ma1.val - ma2.val
+            , trend2 = ptrend2.trend
+            , alpha  = alpha.alpha
             }
         FPrint(
             "%12s " ..
-            -- mid   price1  price2  trendA1 trendB1 trendA2 trendB2 alphaA alphaB
-            "%15.03f %15.03f %15.04f %15.04f %15.08f %15.12f %15.12f %15d %15d"
+            -- mid   price1  price2  trend1 trend2 alpha
+            "%15.03f %15.03f %15.04f %15.04f %15.12f %15d"
             , timestamp
-            , data.mid, data.price1, data.price2, data.trendA1, data.trendB1, data.trendA2, data.trendB2, data.alphaA, data.alphaB
+            , data.mid, data.price1, data.price2, data.trend1, data.trend2, data.alpha
             )
     end
 end
@@ -107,11 +99,11 @@ end
 
 FPrint(
     "%12s " ..
-    -- 2   3    4    5    6    7    8    9    10
-    "%15s %15s %15s %15s %15s %15s %15s %15s %15s"
+    -- 2   3    4    5    6    7
+    "%15s %15s %15s %15s %15s %15s"
     , "time"
-    -- 2      3         4         5          6          7          8          9         10
-    , "mid", "price1", "price2", "trendA1", "trendB1", "trendA2", "trendB2", "alphaA", "alphaB"
+    -- 2      3         4         5          6          7         
+    , "mid", "price1", "price2", "trend1", "trend2", "alpha"
     )
 
 local ln = 0

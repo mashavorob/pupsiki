@@ -88,24 +88,42 @@ function Trend.create(size)
     return self
 end
 
+local AlphaSimple = { alpha=0 }
+
+function AlphaSimple:onValue(trend)
+    if trend == 0 then
+        return
+    end
+
+    self.trend = self.trend or trend
+    if self.trend*trend < 0 then
+        self.alpha = (trend > 0) and 1 or -1
+    end
+    self.trend = trend
+    return self.alpha
+end
+
+function AlphaSimple.create()
+    local self = {}
+    setmetatable(self, {__index=AlphaSimple})
+    return self
+end
+
 local AlphaByTrend = { epsilon = 1e-9
                       , saturation = 1e9
+                      , alpha = 0
                       }
 
 function AlphaByTrend:onValue(trend_1, trend_2)
-    if trend_2 == 0 then
-        return
+    if trend_1 > self.saturation and trend_2 > self.sensitivity then
+        self.alpha = 1
+    elseif trend_1 < -self.saturation and trend_2 < -self.sensitivity then
+        self.alpha = -1
+    elseif trend_1 > self.saturation and trend_2 < -self.sensitivity and self.alpha > 0 then
+        self.alpha = 0 ---1
+    elseif trend_1 < -self.saturation and trend_2 > self.sensitivity and self.alpha < 0 then
+        self.alpha = 0 --1
     end
-    if self.trend_2 and self.trend_2*trend_2 < 0 then
-        if trend_1 > self.saturation and trend_2 < 0 then
-            self.alpha = -1
-        elseif trend_1 < -self.saturation and trend_2 > 0 then
-            self.alpha = 1
-        elseif math.abs(trend_1) < self.sensitivity then
-            self.alpha = 0
-        end
-    end
-    self.trend_2 = trend_2
 end
 
 function AlphaByTrend.create(saturation, sensitivity)
@@ -121,6 +139,7 @@ end
 local q_bricks = { PriceTracker = PriceTracker
                  , MovingAverage = MovingAverage
                  , Trend = Trend
+                 , AlphaSimple = AlphaSimple
                  , AlphaByTrend = AlphaByTrend
                  }
 
