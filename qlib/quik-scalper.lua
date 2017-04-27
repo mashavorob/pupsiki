@@ -16,38 +16,43 @@ local q_config = require("qlib/quik-etc")
 local q_order = require("qlib/quik-order")
 local q_utils = require("qlib/quik-utils")
 local q_time = require("qlib/quik-time")
-local q_cbuffer = assert(require("qlib/quik-cbuffer"))
+local q_bricks = require("qlib/quik-bricks")
 local q_base_strategy = require("qlib/quik-base-strategy")
 
-local q_triggerThreshold = 0.9
+local q_triggerThreshold = 0.1
 
 local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorSpot     = 1000       -- коэффициент осреднения спот
-        , avgFactorVol      = 600        -- коэфициент осреднения отклонения
-        , avgFactorTrend    = 200        -- длина истории для вычисления тренда
-        , avgFactorSigma    = 5000       -- коэфициент осреднения волатильности
-        , openThreshold     = 1          -- порог чувствительности для входа в позицию
-
-        -- Вспомогательные параметры
-        , minSpread = 10                 -- Внимание: спред береться из соотвествующего файла:
-                                         --     * pupsik-scalper-si.lua,
-                                         --     * pupsik-scalper-ri.lua,
-                                         --     * и так далее
-                                         -- расчет: стоимость открытия позиции + стоимость закрытия позиции + маржа
-                                          
-        , maxError          = 2          -- максимально приемлимая ошибка цены ордера (шагов цены)
+        { avgFactorFast     = 750       -- коэффициент осреднения быстрый
+        , avgFactorSlow     = 9000      -- коэфициент осреднения медленый
+        , historyLen        = 400       -- длина истории для вычисления локальных экстремумов
+        , sensitivity       = 0.015     -- порог чувствительности
+        , saturation        = 5         -- порог насыщения
+        , enterSpread       = 0         -- отступ от края стакана для открытия позиции
+        , spread            = 3         -- спред для фиксации прибыли
 
         , params = 
-            { { name="avgFactorSpot",  min=1,    max=1e4, step=10,  precision=1    }
-            , { name="avgFactorVol",   min=1,    max=1e4, step=10,  precision=1    }
-            , { name="avgFactorTrend", min=1,    max=1e4, step=10,  precision=1    }
-            , { name="avgFactorSigma", min=1,    max=1e4, step=10,  precision=1    }
-            , { name="openThreshold",  min=0,    max=100, step=0.1, precision=0.01 }
-            , { name="minSpread",      min=-100, max=100, step=1,   precision=1    }
-            , { name="maxError",       min=0,    max=100, step=1,   precision=1    }
+            { { name="avgFactorFast",  min=1,    max=1e7, step=10,  precision=1    }
+            , { name="avgFactorSlow",  min=1,    max=1e7, step=10,  precision=1    }
+            , { name="historyLen",     min=3,    max=1e7, step=10,  precision=1    }
+            , { name="sensitivity"
+              , min=0
+              , max=1e5
+              , step=0.001
+              , precision=0.001
+              --, get_max = function(self) return self.saturation end
+              }
+            , { name="saturation"
+              , min=0
+              , max=1e5
+              , step=5
+              , precision=1
+              --, get_min = function(self) return self.sensitivity end
+              }
+            , { name="enterSpread",    min=-100, max=100, step=1,   precision=1    }
+            , { name="spread",         min=1,    max=100, step=1,   precision=1    }
             } 
         }
 
@@ -91,14 +96,13 @@ function q_scalper.create(etc)
             { bid = 0
             , offer = 0
             , mid = 0
-            , vol = 0
-            , avgMid = false
-            , avgVol = 0
             , trend = 0
-            , sigma_2 = 0     -- sigma^2
-            , sigma = 0
             , trigger = 0
-            , vols = q_cbuffer.create(self.etc.avgFactorTrend)
+            , pricer = q_bricks.PriceTracker.create()
+            , ma_fast = q_bricks.MovingAverage.create(self.etc.avgFactorFast)
+            , ma_slow = q_bricks.MovingAverage.create(self.etc.avgFactorSlow)
+            , trend2 = q_bricks.Trend.create(self.etc.historyLen)
+            , alpha = q_bricks.AlphaByTrend.create(self.etc.saturation, self.etc.sensitivity)
             }
 
     self.state.targetPos = 0
@@ -112,7 +116,6 @@ function q_scalper.create(etc)
 end
 
 function q_scalper:init()
-    self:Print("q_scalper:init(): self.etc.avgFactorSpot = %d", self.etc.avgFactorSpot)
     q_base_strategy.init(self)
 end
 
@@ -138,11 +141,19 @@ function q_scalper:updatePosition()
     local state = self.state
     local etc = self.etc
     local market = state.market
+    if not market.ma_fast.val then
+        return
+    end
 
     -- check state
     if state.cancel or state.pause or state.halt then
         self:Print("updatePosition() stop due to: state.cancel=%s state.pause=%s state.halt=%s",
             state.cancel, state.pause, state.halt)
+        return
+    end
+
+    local phase = self:checkSchedule()
+    if not phase then
         return
     end
 
@@ -183,55 +194,67 @@ function q_scalper:updatePosition()
     end
 
     if state.order:isActive() then
-        -- unreachable
         state.activeCount = state.activeCount or 0
         state.activeCount = state.activeCount + 1
-        assert(state.activeCount < 100)
-        --[[
-        local kill = false
-        if diff == 0 then
-            self:Print("kill order: target is reached")
-            kill = true
-        elseif (diff < 0 and state.order.operation == 'B') or
-             (diff > 0 and state.order.operation == 'S')
-        then
-            self:Print("kill order: direction has changed")
-            kill = true
-        elseif (state.order.operation == 'B' and math.abs(state.order.price - buyPrice) > etc.maxError*etc.priceStepSize) or
-            (state.order.operation == 'S' and math.abs(state.order.price - sellPrice) > etc.maxError*etc.priceStepSize)
-        then
-            self:Print("kill order: price has changed")
-            kill = true
-        end
-        if kill then
-            local res, err = state.order:kill()
-            self:checkStatus(res, err)
-        end
-        -- ]]
+        assert(state.activeCount < 10000)
+        state.waitForFairPrice = false
+        state.state = "Ожидание исполнения заявки"
+    elseif state.order:isPending() then
+        state.state = "Отправка заявки"
     elseif not state.order:isPending() then
         lotSize = math.min(math.abs(diff), lotSize)
-        local fairPrice = math.floor(market.avgMid/etc.priceStepSize + 0.5)*etc.priceStepSize
+        local spread = (diff > 0) and -etc.enterSpread or etc.enterSpread
+        local fairPrice = math.floor(market.ma_fast.val/etc.priceStepSize + 0.5 + spread)*etc.priceStepSize
 
         if diff > 0 and market.offer <= fairPrice then
-            self:Print("Enter long at: %d@%f", lotSize, fairPrice)
-            state.state = "Открытие лонг"
-            local res, err = state.order:send('B', fairPrice, lotSize, "KILL_BALANCE")
+            state.state = (state.targetPos == 0) and "Ликивидация позиции" or "Открытие длинной позиции"
+            local price = market.offer + etc.priceStepSize
+            self:Print("Enter long at: %d@%f bid=%.0f offer=%.0f market.mid=%.0f ma_fast.val=%.2f"
+                , lotSize, price
+                , market.bid
+                , market.offer
+                , market.mid
+                , market.ma_fast.val
+                )
+            local res, err = state.order:send('B', price, lotSize, "KILL_BALANCE")
             self:checkStatus(res, err)
-            state.buyPrice = fairPrice
+            state.buyPrice = price
             state.waitForFairPrice = false
+            state.hold = false
         elseif diff < 0 and market.bid >= fairPrice then
-            self:Print("Enter short at: %d@%f", lotSize, fairPrice)
-            state.state = "Открытие шорт"
-            local res, err = state.order:send('S', fairPrice, lotSize, "KILL_BALANCE")
+            state.state = (state.targetPos == 0) and "Ликивидация позиции" or "Открытие короткой позиции"
+            local price = market.bid - etc.priceStepSize
+            self:Print("Enter short at: %d@%f bid=%.0f offer=%.0f mid=%.0f ma_fast.val=%.2f"
+                , lotSize, price
+                , market.bid
+                , market.offer
+                , market.mid
+                , market.ma_fast.val
+                )
+            local res, err = state.order:send('S', price, lotSize, "KILL_BALANCE")
             self:checkStatus(res, err)
-            state.sellPrice = fairPrice
+            state.sellPrice = price
             state.waitForFairPrice = false
+            state.hold = false
         elseif diff == 0 then
+            if market.trigger <= q_triggerThreshold then
+                self.state.state = string.format("Недостаточно данных (%.3f)", market.trigger)
+            else
+                state.state = "Удержание позиции"
+            end
             state.waitForFairPrice = false
-        elseif diff ~= 0 and not state.waitForFairPrice then
-            state.waitForFairPrice = true
-            self:Print("waiting for fair price %s@%s", (diff > 0) and "BUY" or "SELL", q_base_strategy.formatValue(fairPrice))
-        end 
+            if not state.hold then
+                self:Print("hold position %d", state.targetPos)
+                state.hold = true
+            end
+        elseif diff ~= 0 then
+            state.state = "Ожидание цены"
+            if not state.waitForFairPrice then
+                state.hold = false
+                state.waitForFairPrice = true
+                self:Print("waiting for fair price %s@%s", (diff > 0) and "BUY" or "SELL", q_base_strategy.formatValue(fairPrice))
+            end
+        end
     end
     if counters.position > 0 and state.targetPos > 0
         or counters.position < 0 and state.targetPos < 0
@@ -251,7 +274,7 @@ function q_scalper:updatePosition()
         local tp_diff = counters.position + tp_balance
         if tp_diff ~= 0 then
             local order = q_order.create(self.etc.account, self.etc.class, self.etc.asset)
-            local spread = etc.minSpread --math.max(math.floor(etc.openThreshold*market.sigma/etc.priceStepSize + 0.5), etc.minSpread)
+            local spread = etc.spread --math.max(math.floor(etc.openThreshold*market.sigma/etc.priceStepSize + 0.5), etc.minSpread)
             spread = spread*etc.priceStepSize
             local res, err = false, ""
             if counters.position > 0 and tp_diff > 0 then
@@ -272,14 +295,8 @@ function q_scalper:updatePosition()
 end
 
 function q_scalper:onTransReply(reply)
+    self:Print("onTransReply(status=%s, result_msg='%s')", tostring(reply.status), reply.result_msg or "") 
     q_base_strategy.onTransReply(self, reply)
-    local state = self.state
-    if reply.trans_id == state.order.trans_id then
-        self:Print("onTransReply(trans_id=%s, reply.balance=%s)", tostring(reply.trans_id), tostring(reply.balance))
-        self:Print("isPending()=%s isActive()=%s balance=%d", state.order:isPending(), state.order:isActive(), state.order.balance)
-        assert(reply.balance == 0)
-    end
-    --self:updatePosition()
 end
 
 function q_scalper:onTrade(trade)
@@ -300,15 +317,6 @@ function q_scalper:onTrade(trade)
     self:updatePosition()
 end
 
-function q_scalper:checkL2()
-    local bid, offer, l2 = self:getQuoteLevel2()
-    if not bid or not offer then
-        return false
-    end
-    self:calcMarketParams(bid, offer, l2)
-    return true
-end
-
 function q_scalper:onQuote(class, asset)
     assert(class)
     assert(asset)
@@ -316,28 +324,31 @@ function q_scalper:onQuote(class, asset)
         return
     end
 
-    if self:checkL2() then
-        self:calcPlannedPos()
-        self:updatePosition()
-    end
-end
-
-function q_scalper:onAllTrade(trade)
     local etc = self.etc
     local state = self.state
     local market = state.market
-    local vols = market.vols
 
-    if bit.band(trade.flags, 1) ~= 0 then
-        market.vol = market.vol - trade.qty
-    elseif bit.band(trade.flags, 2) ~= 0 then
-        market.vol = market.vol + trade.qty
+    local l2 = getQuoteLevel2(etc.class, etc.asset)
+    market.pricer:onQuote(l2)
+    market.bid = market.pricer.bid
+    market.offer = market.pricer.ask
+    market.mid = market.pricer.mid
+    if not market.mid then
+        return
     end
-    market.avgVol = market.avgVol + 1/(etc.avgFactorVol + 1)*(market.vol - market.avgVol)
-    vols:push_back(market.avgVol)
-    local f0, f1, f2 = vols:getAt(vols.size), vols:getAt(math.floor(vols.size/2)), vols:getAt(1)
-    --market.trend = (f0-4*f1+3*f2)/vols.size
-    market.trend = (f2 - f0)/vols.size
+    market.ma_fast:onValue(market.mid)
+    market.ma_slow:onValue(market.mid)
+    market.trend = market.ma_fast.val - market.ma_slow.val
+    market.trend2:onValue(market.trend)
+    market.trigger = market.trigger + market.ma_slow.k*(1 - market.trigger)
+    market.alpha:onValue(market.trend, market.trend2.trend)
+
+    self:calcPlannedPos()
+    self:updatePosition()
+
+end
+
+function q_scalper:onAllTrade(trade)
 end
 
 function q_scalper:onIdle(now)
@@ -352,45 +363,13 @@ function q_scalper:onIdle(now)
     ui_state.position = counters.position
     ui_state.targetPos = state.targetPos
 
-    local format = self:getPriceFormat() .. " /%s"
+    local format = self:getPriceFormat()
 
-    ui_state.spot = string.format(format, (state.market.avgMid or 0), self.formatValue(state.market.sigma))
+    ui_state.spot = string.format(format, state.market.mid or 0)
     ui_state.dev = self.formatValue(state.market.dev2)
 
     ui_state.lastError = "--"
     self:Print("onIdle(): ui_state.state='%s'", ui_state.state)
-end
-
--- function calculates market parameters
-function q_scalper:calcMarketParams(bid, offer, l2)
-
-    local etc = self.etc
-    local state = self.state
-    local market = state.market
-
-    market.bid = bid
-    market.offer = offer
-    market.l2 = l2
-    local mid = (bid + offer)/2
-
-    local k_spot  = 1/(1 + etc.avgFactorSpot)
-    local k_vol   = 1/(1 + etc.avgFactorVol)
-    local k_sigma = 1/(1 + etc.avgFactorSigma)
-    local k_trigger = math.min(k_spot, k_vol, k_sigma)
-
-    market.mid = mid
-    if not market.avgMid then
-        market.avgMid = mid
-    else
-        market.avgMid = market.avgMid + k_spot*(market.mid - market.avgMid)
-    end
-
-    local dev = market.avgMid - market.mid
-    local sigma_2 = dev*dev
-    market.sigma_2 = market.sigma_2 + k_sigma*(sigma_2 - market.sigma_2)
-    market.sigma = math.sqrt(market.sigma_2)
-
-    market.trigger = market.trigger + k_trigger*(1 - market.trigger)
 end
 
 -- function returns operation, price
@@ -399,7 +378,6 @@ function q_scalper:calcPlannedPos()
     local state = self.state
     local market = state.market
    
-    local prevTargetPos = state.targetPos
     state.targetPos = 0
 
     local loss = state.balance.maxValue - state.balance.currValue
@@ -412,8 +390,8 @@ function q_scalper:calcPlannedPos()
         return
     end
 
-    if market.trigger <= 0.5 then
-        self.state.state = string.format("Недостаточно данных (%.2f)", market.trigger)
+    if market.trigger <= q_triggerThreshold then
+        self.state.state = string.format("Недостаточно данных (%.3f)", market.trigger)
         return
     end
     if state.phase == q_scalper.PHASE_READY then
@@ -426,29 +404,30 @@ function q_scalper:calcPlannedPos()
         return
     end
 
-    if not self:checkSchedule() or self:isEOD() then
-        return
-    end
-
     state.targetPos = self:getAlpha()*self:getLimit()
-
 end
 
 function q_scalper:getAlpha()
-    local alpha = 0
-    
     local etc = self.etc
     local state = self.state
     local market = state.market
-    local sigma = market.sigma*etc.openThreshold
 
-    if market.trend > 0 then
-        alpha = 1
-    elseif market.trend < 0 then
-        alpha = -1
+    local alpha = self.state.market.alpha.alpha
+    if market.trigger < q_triggerThreshold then 
+        alpha = 0
+    else
+        local phase = self:checkSchedule()
+        local sphase = (not phase) and "Closed" or (phase == self.CONTINUOUS_TRADING) and "Continuous trading" or "Closing"
+        if state.prev_phase ~= sphase then
+            self:Print("phase='%s' (%s)", sphase, tostring(phase))
+            state.prev_phase = sphase
+        end
+        if not phase or phase ~= self.CONTINUOUS_TRADING then
+            alpha = 0
+        end
     end
-
-    return alpha
+    self.state.market.alpha.alpha = alpha
+    return self.state.market.alpha.alpha
 end
 
 function q_scalper:killOrders()
