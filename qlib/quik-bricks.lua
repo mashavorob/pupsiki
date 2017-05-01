@@ -45,42 +45,23 @@ function MovingAverage:onValue(val, now)
     if not val then
         return
     end
-    if not self.val then
-        self.time = now
-        self.val = val
+    if not self.ma_val then
         self.ma_val = val
-        self.count = 0
-        self.acc = { val = val, count = 1, prev = val }
-
+        self.val = val
         return true
     end
 
-    if self.time + self.period <= now then
-        local avg = self.acc.val/self.acc.count
-        self.ma_val = self.ma_val + self.k*(avg - self.ma_val)
-        self.val = self.ma_val
-        self.time = self.time + self.period
-        self.count = self.acc.count
-        self.acc.val = self.acc.prev
-        self.acc.count = 1
-        return true
+    if val == self.val then
+        return
     end
-    
-    if not self.acc.prev or val ~= self.acc.prev then
-        self.acc.val = self.acc.val + val
-        self.acc.count = self.acc.count + 1
-        --self.val = self.ma_val + self.k*(self.acc.val/self.count.val - self.ma_val)
-        self.acc.prev = val
-    end
-    return false
+    self.ma_val = self.ma_val + self.k*(val - self.ma_val)
+    self.val = val
+    return true
 end
 
 function MovingAverage.create(averageFactor, period)
-    local self = { val = nil
-                 , count = 0 
+    local self = { ma_val = nil
                  , k = 1/(averageFactor + 1)
-                 , period = period
-                 , acc = { val = 0, count = 0, prev = nil }
                  }
 
     setmetatable(self, {__index = MovingAverage})
@@ -89,37 +70,25 @@ end
 
 local Trend = {}
 
-function Trend:onValue(val, now, quant)
+function Trend:onValue(val)
 
     if not val then
         return
     end
     if not self.trend then
         self.values:reset(val)
-        self.times:reset(now)
         self.trend = 0
     else
-        if quant then
-            self.values:push_back(val)
-            self.times:push_back(now)
-        end
-        
-        local t0 = self.times:getAt(self.times.size)
-        local period = now - t0
-        if period > 0 then
-            --local f0, f1, f2 = self.values:getAt(self.values.size), self.values:getAt(math.floor(self.values.size/2)), val
-            --self.trend = (f0-4*f1+3*f2)/period
-            local f0, f1 = self.values:getAt(self.values.size), val
-            self.trend = (f1 - f0)/period
-        else
-            self.trend = 0
-        end
+        self.values:push_back(val)
+        --local f0, f1, f2 = self.values:getAt(self.values.size), self.values:getAt(math.floor(self.values.size/2)), val
+        --self.trend = (f0-4*f1+3*f2)/self.values.size
+        local f0, f1 = self.values:getAt(self.values.size), val
+        self.trend = (f1 - f0)/self.values.size
     end
 end
 
 function Trend.create(size)
     local self = { values = q_cbuffer.create(size)
-                 , times = q_cbuffer.create(size)
                  , trend = nil
                  }
     setmetatable(self, {__index = Trend})
@@ -181,12 +150,12 @@ function AlphaFilterOpen:filter(alpha, bid, ask)
 
     local fair_bid, fair_ask = bid, ask
     if self.spread == 0 then
-        local fair_price = (self.ma_bid.val + self.ma_ask.val)/2
+        local fair_price = (self.ma_bid.ma_val + self.ma_ask.ma_val)/2
         fair_bid = fair_price
         fair_ask = fair_ask
     else
-        fair_bid = self.ma_bid.val + self.spread
-        fair_ask = self.ma_ask.val - self.spread
+        fair_bid = self.ma_bid.ma_val + self.spread
+        fair_ask = self.ma_ask.ma_val - self.spread
     end
 
     if alpha > self.alpha and ask > fair_ask then

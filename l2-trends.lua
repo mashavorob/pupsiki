@@ -33,23 +33,21 @@ end
 
 local xbit = bit or bit32
 
-local period_price = 0.5
-local period_trend = 20
 
-local avg_price = 50
-local avg_trend = period_trend/period_price
+local avg_price = 100
+local avg_trend = 10
 
-local sensitivity = 0.2
+local sensitivity = 0.05
 local spread_open = 0
 local spread_fix = 40
 
-local avg_price_open = 5
+local avg_price_open = 10
 
 local pricer = q_bricks.PriceTracker.create()
-local ma_bid = q_bricks.MovingAverage.create(avg_price, period_price)
-local ma_ask = q_bricks.MovingAverage.create(avg_price, period_price)
-local ma_bid_open = q_bricks.MovingAverage.create(avg_price_open, period_price)
-local ma_ask_open = q_bricks.MovingAverage.create(avg_price_open, period_price)
+local ma_bid = q_bricks.MovingAverage.create(avg_price)
+local ma_ask = q_bricks.MovingAverage.create(avg_price)
+local ma_bid_open = q_bricks.MovingAverage.create(avg_price_open)
+local ma_ask_open = q_bricks.MovingAverage.create(avg_price_open)
 local ptrend_bid = q_bricks.Trend.create(avg_trend)
 local ptrend_ask = q_bricks.Trend.create(avg_trend)
 local alpha_bid = q_bricks.AlphaByTrend.create(sensitivity)
@@ -57,7 +55,6 @@ local alpha_ask = q_bricks.AlphaByTrend.create(sensitivity)
 local alpha_aggr = q_bricks.AlphaAgg.create()
 local alpha_open = q_bricks.AlphaFilterOpen.create(spread_open, ma_bid_open, ma_ask_open)
 local alpha_fix = q_bricks.AlphaFilterFix.create(spread_fix)
---local alpha = q_bricks.AlphaSimple.create(40, 5)
 
 local now = nil
 local prevLn = nil
@@ -71,35 +68,24 @@ function processEvent(ev)
     if ev.event == "onQuote" then
         pricer:onQuote(ev.l2)
 
-        local quantum = ma_bid:onValue(pricer.bid, now)
-        while quantum do
-            ptrend_bid:onValue(ma_bid.ma_val, ma_bid.time, true)
-            quantum = ma_bid:onValue(pricer.bid, now)
+        if ma_bid:onValue(pricer.bid, now) then
+            ptrend_bid:onValue(ma_bid.ma_val)
+            alpha_bid:onValue(ptrend_bid.trend)
         end
 
-        quantum = ma_ask:onValue(pricer.ask, now)
-        while quantum do
-            ptrend_ask:onValue(ma_ask.ma_val, ma_ask.time, true)
-            quantum = ma_ask:onValue(pricer.ask, now)
+        if ma_ask:onValue(pricer.ask, now) then
+            ptrend_ask:onValue(ma_ask.ma_val)
+            alpha_ask:onValue(ptrend_ask.trend)
         end
         
-        quantum = ma_bid_open:onValue(pricer.bid, now)
-        while quantum do
-            quantum = ma_bid_open:onValue(pricer.bid, now)
-        end
-
-        quantum = ma_ask_open:onValue(pricer.ask, now)
-        while quantum do
-            quantum = ma_ask_open:onValue(pricer.ask, now)
-        end
-
-        --ptrend_bid:onValue(ma_bid.val, now)
-        --ptrend_ask:onValue(ma_ask.val, now)
-        
-        alpha_bid:onValue(ptrend_bid.trend)
-        alpha_ask:onValue(ptrend_ask.trend)
         alpha_aggr:aggregate(alpha_bid.alpha, alpha_ask.alpha)
-        alpha_open:filter(alpha_aggr.alpha, pricer.bid, pricer.ask)
+
+        local new_bid = ma_bid_open:onValue(pricer.bid, now)
+        local new_ask = ma_ask_open:onValue(pricer.ask, now)
+
+        if new_bid or new_ask then 
+            alpha_open:filter(alpha_aggr.alpha, pricer.bid, pricer.ask)
+        end
         alpha_fix:filter(alpha_open.alpha, pricer.bid, pricer.bid)
         changed = true
     elseif ev.event == "onAllTrade" then
@@ -112,27 +98,23 @@ function processEvent(ev)
         local timestamp = string.format("%s.%03d", os.date("%H:%M:%S", math.floor(now)), ms)
         local data =
             { mid     = pricer.mid
-            , price  = (ma_bid.val + ma_ask.val)/2
-            , price_open  = (ma_bid_open.val + ma_ask_open.val)/2
+            , price  = (ma_bid.ma_val + ma_ask.ma_val)/2
+            , price_open  = (ma_bid_open.ma_val + ma_ask_open.ma_val)/2
             , trend = (ptrend_bid.trend + ptrend_ask.trend)/2
             , alpha_bid  = alpha_bid.alpha
             , alpha_ask  = alpha_ask.alpha
             , alpha_aggr = alpha_aggr.alpha
             , alpha_open = alpha_open.alpha
             , alpha_fix  = alpha_fix.alpha
-            , count_bid  = ma_bid.count
-            , count_ask  = ma_ask.count
             }
         local ln = string.format(
-            -- mid   price   price-open  trend   alpha-bid alpha-ask  alpha alpha-open alpha-fix  count-bid  count-ask
-            "%15.03f %15.03f %15.03f ".."%15.04f %15d " .. "%15d " .. "%15d %15d " ..  "%15d " .. "%15d " .. "%15d"
+            -- mid   price   price-open  trend   alpha-bid alpha-ask  alpha alpha-open alpha-fix
+            "%15.03f %15.03f %15.03f ".."%15.04f %15d " .. "%15d " .. "%15d %15d " ..  "%15d "
             , data.mid, data.price, data.price_open, data.trend
             , data.alpha_bid, data.alpha_ask
             , data.alpha_aggr
             , data.alpha_open
             , data.alpha_fix
-            , data.count_bid
-            , data.count_ask
             )
         if not prevLn or ln ~= prevLn then
             prevLn = ln
@@ -155,11 +137,11 @@ end
 
 FPrint(
     "%12s " ..
-    -- 2   3    4    5    6    7    8    9    10   11   12
-    "%15s %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s"
+    -- 2   3    4    5    6    7    8    9    10
+    "%15s %15s %15s %15s %15s %15s %15s %15s %15s"
     , "time"
-    -- 2      3         4            5        6            7            8        9             10           11           12
-    , "mid", "price", "price-open", "trend", "alpha-bid", "alpha-ask", "alpha", "alpha-open", "alpha-fix", "count-bid", "count-ask"
+    -- 2      3         4            5        6            7            8        9             10
+    , "mid", "price", "price-open", "trend", "alpha-bid", "alpha-ask", "alpha", "alpha-open", "alpha-fix"
     )
 
 local ln = 0

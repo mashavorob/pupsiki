@@ -84,21 +84,6 @@ plot \
     "si.txt" using 1:4 title 'Price-Open' with lines axes x1y1, \
     "si.txt" using 1:9 title 'Alpha-Open' with lines axes x1y2
 
-# set title "Time quantums"
-# set xdata time
-# set timefmt "%H:%M:%S"
-# set format x "%H:%M:%.3S"
-# set xtics out rotate by 0
-# set xlabel "Time"
-# set ylabel "Count"
-# set autoscale y
-# set xzeroaxis
-# set grid
-# set xrange ["14:00:00" : "18:00:00"]
-# plot \
-#     "si.txt" using 1:11 title 'bids per quantum' with lines axes x1y1, \
-#     "si.txt" using 1:12 title 'asks per quantum' with lines axes x1y1
-
 set title "Moving average trend"
 set xdata time
 set timefmt "%H:%M:%S"
