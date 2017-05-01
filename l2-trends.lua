@@ -33,17 +33,17 @@ end
 
 local xbit = bit or bit32
 
-local period_price = 0.5
-local period_trend = 20
+local period_price = 0.25
+local period_trend = 25
 
-local avg_price = 50
+local avg_price = 900
 local avg_trend = period_trend/period_price
 
-local sensitivity = 0.2
+local sensitivity = 0.08
 local spread_open = 0
 local spread_fix = 40
 
-local avg_price_open = 5
+local avg_price_open = 100
 
 local pricer = q_bricks.PriceTracker.create()
 local ma_bid = q_bricks.MovingAverage.create(avg_price, period_price)
@@ -113,7 +113,7 @@ function processEvent(ev)
         local data =
             { mid     = pricer.mid
             , price  = (ma_bid.val + ma_ask.val)/2
-            , price_open  = (ma_bid_open.val + ma_ask_open.val)/2
+            , price_open  = (ma_bid_open.ma_val + ma_ask_open.ma_val)/2
             , trend = (ptrend_bid.trend + ptrend_ask.trend)/2
             , alpha_bid  = alpha_bid.alpha
             , alpha_ask  = alpha_ask.alpha

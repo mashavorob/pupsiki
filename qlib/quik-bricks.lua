@@ -181,12 +181,12 @@ function AlphaFilterOpen:filter(alpha, bid, ask)
 
     local fair_bid, fair_ask = bid, ask
     if self.spread == 0 then
-        local fair_price = (self.ma_bid.val + self.ma_ask.val)/2
+        local fair_price = (self.ma_bid.ma_val + self.ma_ask.ma_val)/2
         fair_bid = fair_price
         fair_ask = fair_ask
     else
-        fair_bid = self.ma_bid.val + self.spread
-        fair_ask = self.ma_ask.val - self.spread
+        fair_bid = self.ma_bid.ma_val + self.spread
+        fair_ask = self.ma_ask.ma_val - self.spread
     end
 
     if alpha > self.alpha and ask > fair_ask then
