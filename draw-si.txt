@@ -24,20 +24,39 @@ plot \
     "si.txt" using 1:4 title 'Price-Open' with lines axes x1y1, \
     "si.txt" using 1:9 title 'Alpha-Open' with lines axes x1y2
 
-set title "Time quantums"
+set title "Moving average trend"
 set xdata time
 set timefmt "%H:%M:%S"
 set format x "%H:%M:%.3S"
 set xtics out rotate by 0
 set xlabel "Time"
-set ylabel "Count"
+set ylabel "Spot"
+set y2label "Trend"
 set autoscale y
+set autoscale y2
+set y2tics
 set xzeroaxis
+set x2zeroaxis
 set grid
 set xrange ["10:00:00" : "14:00:00"]
 plot \
-    "si.txt" using 1:11 title 'bids per quantum' with lines axes x1y1, \
-    "si.txt" using 1:12 title 'asks per quantum' with lines axes x1y1
+    "si.txt" using 1:2 title 'Spot' with lines axes x1y1, \
+    "si.txt" using 1:5 title 'Trend' with lines axes x1y2
+
+#set title "Time quantums"
+#set xdata time
+#set timefmt "%H:%M:%S"
+#set format x "%H:%M:%.3S"
+#set xtics out rotate by 0
+#set xlabel "Time"
+#set ylabel "Count"
+#set autoscale y
+#set xzeroaxis
+#set grid
+#set xrange ["10:00:00" : "14:00:00"]
+#plot \
+#    "si.txt" using 1:11 title 'bids per quantum' with lines axes x1y1, \
+#    "si.txt" using 1:12 title 'asks per quantum' with lines axes x1y1
 
 unset multiplot
 

@@ -126,27 +126,6 @@ function Trend.create(size)
     return self
 end
 
-local AlphaSimple = { alpha=0 }
-
-function AlphaSimple:onValue(trend)
-    if trend == 0 then
-        return
-    end
-
-    self.trend = self.trend or trend
-    if self.trend*trend < 0 then
-        self.alpha = (trend > 0) and 1 or -1
-    end
-    self.trend = trend
-    return self.alpha
-end
-
-function AlphaSimple.create()
-    local self = {}
-    setmetatable(self, {__index=AlphaSimple})
-    return self
-end
-
 local AlphaByTrend = { epsilon = 1e-9
                      , alpha = 0
                      }
@@ -276,7 +255,6 @@ end
 local q_bricks = { PriceTracker = PriceTracker
                  , MovingAverage = MovingAverage
                  , Trend = Trend
-                 , AlphaSimple = AlphaSimple
                  , AlphaByTrend = AlphaByTrend
                  , AlphaAgg = AlphaAgg
                  , AlphaFilterOpen = AlphaFilterOpen

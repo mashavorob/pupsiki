@@ -33,17 +33,17 @@ end
 
 local xbit = bit or bit32
 
-local period_price = 1
-local period_trend = 45
+local period_price = 0.5
+local period_trend = 20
 
-local avg_price = 350
+local avg_price = 50
 local avg_trend = period_trend/period_price
 
-local sensitivity = 0.008
+local sensitivity = 0.2
 local spread_open = 0
-local spread_fix = 20
+local spread_fix = 40
 
-local avg_price_open = 50
+local avg_price_open = 5
 
 local pricer = q_bricks.PriceTracker.create()
 local ma_bid = q_bricks.MovingAverage.create(avg_price, period_price)
