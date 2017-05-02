@@ -31,7 +31,6 @@ local q_scalper =
         , historyLen        = 25        -- длина истории для вычисления локальных экстремумов
         , sensitivity       = 0.08      -- порог чувствительности
         , enterSpread       = 0         -- отступ от края стакана для открытия позиции
-        , fixSpread         = 20        -- фиксация прибыли
 
         , params = 
             { { name="avgFactorPrice", min=1,    max=1e7, step=10,    precision=1     }
@@ -46,7 +45,6 @@ local q_scalper =
             }
             , { name="sensitivity",    min=0,    max=1e5, step=0.001, precision=0.001 }
             , { name="enterSpread",    min=-100, max=100, step=1,     precision=1     }
-            , { name="fixSpread",      min=0,    max=1e5, step=1,     precision=1     }
 
             --[[
             
@@ -119,7 +117,6 @@ function q_scalper.create(etc)
                                                                           , self.state.market.ma_bid_open
                                                                           , self.state.market.ma_ask_open
                                                                           )
-            self.state.market.alpha_fix = q_bricks.AlphaFilterFix.create(self.etc.fixSpread)
             self.state.market.alpha = self.state.market.alpha_open
 
     self.state.targetPos = 0
