@@ -22,12 +22,17 @@ function PriceTracker:onQuote(l2)
     local bid_price = (#bid > 0) and tonumber(bid[#bid].price)
     local ask_price = (#ask > 0) and tonumber(ask[1].price)
 
+    local new_bid = (not self.bid and bid_price) or (bid_price and self.bid ~= bid_price)
+    local new_ask = (not self.ask and ask_price) or (ask_price and self.ask ~= ask_price)
+    local new_mid = new_bid or new_ask and (self.bid and self.ask)
+
     self.bid = bid_price or self.bid
     self.ask = ask_price or self.ask
 
     if self.bid and self.ask then
         self.mid = (self.bid + self.ask)/2
     end
+    return new_bid, new_ask, new_mid
 end
 
 function PriceTracker.create()
@@ -42,20 +47,14 @@ end
 local MovingAverage = {}
 
 function MovingAverage:onValue(val, now)
-    if not val then
-        return
-    end
+    assert(val)
     if not self.ma_val then
         self.ma_val = val
         self.val = val
         return true
     end
 
-    if val == self.val then
-        return
-    end
     self.ma_val = self.ma_val + self.k*(val - self.ma_val)
-    self.val = val
     return true
 end
 
@@ -72,9 +71,7 @@ local Trend = {}
 
 function Trend:onValue(val)
 
-    if not val then
-        return
-    end
+    assert(val)
     if not self.trend then
         self.values:reset(val)
         self.trend = 0

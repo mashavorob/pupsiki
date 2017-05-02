@@ -65,28 +65,29 @@ function processEvent(ev)
         now = math.max(now, t)
     end
     if ev.event == "onQuote" then
-        pricer:onQuote(ev.l2)
+        local new_bid, new_ask, new_mid = pricer:onQuote(ev.l2)
 
-        if ma_bid:onValue(pricer.bid, now) then
+        if new_bid then
+            ma_bid:onValue(pricer.bid, now)
+            ma_bid_open:onValue(pricer.bid, now)
             ptrend_bid:onValue(ma_bid.ma_val)
             alpha_bid:onValue(ptrend_bid.trend)
         end
-
-        if ma_ask:onValue(pricer.ask, now) then
+        if new_ask then
+            ma_ask:onValue(pricer.ask, now)
+            ma_ask_open:onValue(pricer.ask, now)
             ptrend_ask:onValue(ma_ask.ma_val)
             alpha_ask:onValue(ptrend_ask.trend)
         end
         
-        alpha_aggr:aggregate(alpha_bid.alpha, alpha_ask.alpha)
-
-        local new_bid = ma_bid_open:onValue(pricer.bid, now)
-        local new_ask = ma_ask_open:onValue(pricer.ask, now)
-
-        if new_bid or new_ask then 
+        if new_mid then
+            alpha_bid:onValue(ptrend_bid.trend)
+            alpha_ask:onValue(ptrend_ask.trend)
+            alpha_aggr:aggregate(alpha_bid.alpha, alpha_ask.alpha)
             alpha_open:filter(alpha_aggr.alpha, pricer.bid, pricer.ask)
+            alpha_fix:filter(alpha_open.alpha, pricer.bid, pricer.bid)
+            changed = true
         end
-        alpha_fix:filter(alpha_open.alpha, pricer.bid, pricer.bid)
-        changed = true
     elseif ev.event == "onAllTrade" then
         --trend:onAllTrade(ev.trade)
         --changed = true
