@@ -25,25 +25,17 @@ local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorPrice    = 900       -- коэффициент осреднения цены
-        , avgFactorOpen     = 100       -- коэффициент осреднения цены для открытия позиции
-        , priceCandle       = 0.25      -- ширина свечи цены, сек
-        , historyLen        = 25        -- длина истории для вычисления локальных экстремумов
+        { avgFactorPrice    = 175       -- коэффициент осреднения цены
+        , avgFactorOpen     = 10        -- коэффициент осреднения цены для открытия позиции
+        , historyLen        = 15        -- длина истории для вычисления локальных экстремумов
         , sensitivity       = 0.08      -- порог чувствительности
         , enterSpread       = 0         -- отступ от края стакана для открытия позиции
         , fixSpread         = 50        -- фиксация прибыли
 
         , params = 
-            { { name="avgFactorPrice", min=1,    max=1e7, step=10,    precision=1     }
+            { { name="avgFactorPrice", min=1,    max=1e7, step=10,    precision=1   }
             , { name="avgFactorOpen",  min=1,    max=1e7, step=10,    precision=1   }
-            , { name="priceCandle",    min=0,    max=600, step=10,    precision=0.1   }
-            , { name="historyLen"
-            ,   min=3
-            ,   max=1e7
-            ,   step=10
-            ,   precision=1     
-            ,   get_min = function(self) return self.priceCandle*2.01 end
-            }
+            , { name="historyLen",     min=2,    max=1e4, step=10,    precision=1   }
             , { name="sensitivity",    min=0,    max=1e5, step=0.001, precision=0.001 }
             , { name="enterSpread",    min=-100, max=100, step=1,     precision=1     }
             , { name="fixSpread",      min=0,    max=1e5, step=1,     precision=1     }
@@ -105,12 +97,12 @@ function q_scalper.create(etc)
             , mid = 0
             , trigger = 0
             , pricer = q_bricks.PriceTracker.create()
-            , ma_bid = q_bricks.MovingAverage.create(self.etc.avgFactorPrice, self.etc.priceCandle)
-            , ma_ask = q_bricks.MovingAverage.create(self.etc.avgFactorPrice, self.etc.priceCandle)
-            , ma_bid_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen, self.etc.priceCandle)
-            , ma_ask_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen, self.etc.priceCandle)
-            , trend_bid = q_bricks.Trend.create(self.etc.historyLen/self.etc.priceCandle)
-            , trend_ask = q_bricks.Trend.create(self.etc.historyLen/self.etc.priceCandle)
+            , ma_bid = q_bricks.MovingAverage.create(self.etc.avgFactorPrice)
+            , ma_ask = q_bricks.MovingAverage.create(self.etc.avgFactorPrice)
+            , ma_bid_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen)
+            , ma_ask_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen)
+            , trend_bid = q_bricks.Trend.create(self.etc.historyLen)
+            , trend_ask = q_bricks.Trend.create(self.etc.historyLen)
             , alpha_bid = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
             , alpha_ask = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
             , alpha_aggr = q_bricks.AlphaAgg.create()
@@ -258,38 +250,22 @@ function q_scalper:onQuote(class, asset)
     local now = quik_ext.gettime()
 
     if new_bid then
-        local quant = market.ma_bid:onValue(market.pricer.bid, now)
-        while quant do
-            market.trend_bid:onValue(market.ma_bid.ma_val, market.ma_bid.time, true)
-            quant = market.ma_bid:onValue(market.pricer.bid, now)
-        end
-        quant = market.ma_bid_open:onValue(market.pricer.bid, now)
-        while quant do
-            quant = market.ma_bid_open:onValue(market.pricer.bid, now)
-        end
+        market.ma_bid:onValue(market.pricer.bid, now)
+        market.ma_bid_open:onValue(market.pricer.bid, now)
+        market.trend_bid:onValue(market.ma_bid.ma_val, market.ma_bid.time, true)
+        market.alpha_bid:onValue(market.trend_bid.trend)
     end
-
     if new_ask then
-        quant = market.ma_ask:onValue(market.pricer.ask, now)
-        while quant do
-            market.trend_ask:onValue(market.ma_ask.ma_val, market.ma_ask.time, true)
-            quant = market.ma_ask:onValue(market.pricer.ask, now)
-        end
-        quant = market.ma_ask_open:onValue(market.pricer.ask, now)
-        while quant do
-            quant = market.ma_ask_open:onValue(market.pricer.ask, now)
-        end
+        market.ma_ask:onValue(market.pricer.bid, now)
+        market.ma_ask_open:onValue(market.pricer.bid, now)
+        market.trend_ask:onValue(market.ma_bid.ma_val, market.ma_bid.time, true)
+        market.alpha_ask:onValue(market.trend_bid.trend)
     end
 
     if new_mid then
-        market.alpha_bid:onValue(market.trend_bid.trend)
-        market.alpha_ask:onValue(market.trend_ask.trend)
         market.alpha_aggr:aggregate(market.alpha_bid.alpha, market.alpha_ask.alpha)
-
         market.alpha:filter(market.alpha_aggr.alpha, market.pricer.bid, market.pricer.ask)
-
         market.trigger = market.trigger + market.ma_bid.k*(1 - market.trigger)
-
         self:calcPlannedPos()
     end
     self:updatePosition()

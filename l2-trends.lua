@@ -34,9 +34,9 @@ end
 local xbit = bit or bit32
 
 local avg_price = 100
-local avg_trend = 10
+local avg_trend = 15
 
-local sensitivity = 0.05
+local sensitivity = 0.08
 local spread_open = 0
 local spread_fix = 40
 
