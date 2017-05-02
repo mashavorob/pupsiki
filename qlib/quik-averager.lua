@@ -245,7 +245,7 @@ function q_scalper:onQuote(class, asset)
     local market = state.market
 
     local l2 = getQuoteLevel2(etc.class, etc.asset)
-    market.pricer:onQuote(l2)
+    local new_bid, new_ask, new_mid = market.pricer:onQuote(l2)
     market.bid = market.pricer.bid
     market.offer = market.pricer.ask
     market.mid = market.pricer.mid
@@ -254,40 +254,41 @@ function q_scalper:onQuote(class, asset)
     end
     local now = quik_ext.gettime()
 
-    local quant = market.ma_bid:onValue(market.pricer.bid, now)
-    while quant do
-        market.trend_bid:onValue(market.ma_bid.ma_val, market.ma_bid.time, true)
-        quant = market.ma_bid:onValue(market.pricer.bid, now)
-    end
-
-    quant = market.ma_ask:onValue(market.pricer.ask, now)
-    while quant do
-        market.trend_ask:onValue(market.ma_ask.ma_val, market.ma_ask.time, true)
-        quant = market.ma_ask:onValue(market.pricer.ask, now)
-    end
-    
-    quant = market.ma_bid_open:onValue(market.pricer.bid, now)
-    while quant do
+    if new_bid then
+        local quant = market.ma_bid:onValue(market.pricer.bid, now)
+        while quant do
+            market.trend_bid:onValue(market.ma_bid.ma_val, market.ma_bid.time, true)
+            quant = market.ma_bid:onValue(market.pricer.bid, now)
+        end
         quant = market.ma_bid_open:onValue(market.pricer.bid, now)
+        while quant do
+            quant = market.ma_bid_open:onValue(market.pricer.bid, now)
+        end
     end
 
-    quant = market.ma_ask_open:onValue(market.pricer.ask, now)
-    while quant do
+    if new_ask then
+        quant = market.ma_ask:onValue(market.pricer.ask, now)
+        while quant do
+            market.trend_ask:onValue(market.ma_ask.ma_val, market.ma_ask.time, true)
+            quant = market.ma_ask:onValue(market.pricer.ask, now)
+        end
         quant = market.ma_ask_open:onValue(market.pricer.ask, now)
+        while quant do
+            quant = market.ma_ask_open:onValue(market.pricer.ask, now)
+        end
     end
 
-    --market.trend_bid:onValue(market.ma_bid.val, now)
-    --market.trend_ask:onValue(market.ma_ask.val, now)
+    if new_mid then
+        market.alpha_bid:onValue(market.trend_bid.trend)
+        market.alpha_ask:onValue(market.trend_ask.trend)
+        market.alpha_aggr:aggregate(market.alpha_bid.alpha, market.alpha_ask.alpha)
 
-    market.alpha_bid:onValue(market.trend_bid.trend)
-    market.alpha_ask:onValue(market.trend_ask.trend)
-    market.alpha_aggr:aggregate(market.alpha_bid.alpha, market.alpha_ask.alpha)
+        market.alpha:filter(market.alpha_aggr.alpha, market.pricer.bid, market.pricer.ask)
 
-    market.alpha:filter(market.alpha_aggr.alpha, market.pricer.bid, market.pricer.ask)
+        market.trigger = market.trigger + market.ma_bid.k*(1 - market.trigger)
 
-    market.trigger = market.trigger + market.ma_bid.k*(1 - market.trigger)
-
-    self:calcPlannedPos()
+        self:calcPlannedPos()
+    end
     self:updatePosition()
 end
 

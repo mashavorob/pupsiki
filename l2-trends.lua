@@ -69,39 +69,39 @@ function processEvent(ev)
         now = math.max(now, t)
     end
     if ev.event == "onQuote" then
-        pricer:onQuote(ev.l2)
+        local new_bid, new_ask, new_mid = pricer:onQuote(ev.l2)
 
-        local quantum = ma_bid:onValue(pricer.bid, now)
-        while quantum do
-            ptrend_bid:onValue(ma_bid.ma_val, ma_bid.time, true)
-            quantum = ma_bid:onValue(pricer.bid, now)
-        end
-
-        quantum = ma_ask:onValue(pricer.ask, now)
-        while quantum do
-            ptrend_ask:onValue(ma_ask.ma_val, ma_ask.time, true)
-            quantum = ma_ask:onValue(pricer.ask, now)
-        end
-        
-        quantum = ma_bid_open:onValue(pricer.bid, now)
-        while quantum do
+        if new_bid then
+            local quantum = ma_bid:onValue(pricer.bid, now)
+            while quantum do
+                ptrend_bid:onValue(ma_bid.ma_val, ma_bid.time, true)
+                quantum = ma_bid:onValue(pricer.bid, now)
+            end
             quantum = ma_bid_open:onValue(pricer.bid, now)
+            while quantum do
+                quantum = ma_bid_open:onValue(pricer.bid, now)
+            end
         end
-
-        quantum = ma_ask_open:onValue(pricer.ask, now)
-        while quantum do
+        if new_ask then
+            local quantum = ma_ask:onValue(pricer.ask, now)
+            while quantum do
+                ptrend_ask:onValue(ma_ask.ma_val, ma_ask.time, true)
+                quantum = ma_ask:onValue(pricer.ask, now)
+            end
             quantum = ma_ask_open:onValue(pricer.ask, now)
+            while quantum do
+                quantum = ma_ask_open:onValue(pricer.ask, now)
+            end
         end
 
-        --ptrend_bid:onValue(ma_bid.val, now)
-        --ptrend_ask:onValue(ma_ask.val, now)
-        
-        alpha_bid:onValue(ptrend_bid.trend)
-        alpha_ask:onValue(ptrend_ask.trend)
-        alpha_aggr:aggregate(alpha_bid.alpha, alpha_ask.alpha)
-        alpha_open:filter(alpha_aggr.alpha, pricer.bid, pricer.ask)
-        alpha_fix:filter(alpha_open.alpha, pricer.bid, pricer.bid)
-        changed = true
+        if new_mid then
+            alpha_bid:onValue(ptrend_bid.trend)
+            alpha_ask:onValue(ptrend_ask.trend)
+            alpha_aggr:aggregate(alpha_bid.alpha, alpha_ask.alpha)
+            alpha_open:filter(alpha_aggr.alpha, pricer.bid, pricer.ask)
+            alpha_fix:filter(alpha_open.alpha, pricer.bid, pricer.bid)
+            changed = true
+        end
     elseif ev.event == "onAllTrade" then
         --trend:onAllTrade(ev.trade)
         --changed = true

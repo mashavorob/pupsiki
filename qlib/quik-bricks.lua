@@ -22,12 +22,17 @@ function PriceTracker:onQuote(l2)
     local bid_price = (#bid > 0) and tonumber(bid[#bid].price)
     local ask_price = (#ask > 0) and tonumber(ask[1].price)
 
+    local new_bid = (not self.bid and bid_price) or (bid_price and self.bid ~= bid_price)
+    local new_ask = (not self.ask and ask_price) or (ask_price and self.ask ~= ask_price)
+    local new_mid = new_bid or new_ask and (self.bid and self.ask)
+
     self.bid = bid_price or self.bid
     self.ask = ask_price or self.ask
 
     if self.bid and self.ask then
         self.mid = (self.bid + self.ask)/2
     end
+    return new_bid, new_ask, new_mid
 end
 
 function PriceTracker.create()
@@ -42,36 +47,30 @@ end
 local MovingAverage = {}
 
 function MovingAverage:onValue(val, now)
-    if not val then
-        return
-    end
+    assert(val)
     if not self.val then
         self.time = now
         self.val = val
         self.ma_val = val
         self.count = 0
         self.acc = { val = val, count = 1, prev = val }
-
         return true
     end
 
     if self.time + self.period <= now then
-        local avg = self.acc.val/self.acc.count
+        local avg = (self.acc.count > 0) and self.acc.val/self.acc.count or self.acc.prev
         self.ma_val = self.ma_val + self.k*(avg - self.ma_val)
         self.val = self.ma_val
         self.time = self.time + self.period
         self.count = self.acc.count
-        self.acc.val = self.acc.prev
-        self.acc.count = 1
+        self.acc.val = 0
+        self.acc.count = 0
         return true
     end
     
-    if not self.acc.prev or val ~= self.acc.prev then
-        self.acc.val = self.acc.val + val
-        self.acc.count = self.acc.count + 1
-        --self.val = self.ma_val + self.k*(self.acc.val/self.count.val - self.ma_val)
-        self.acc.prev = val
-    end
+    self.acc.val = self.acc.val + val
+    self.acc.count = self.acc.count + 1
+    self.acc.prev = val
     return false
 end
 
@@ -80,7 +79,7 @@ function MovingAverage.create(averageFactor, period)
                  , count = 0 
                  , k = 1/(averageFactor + 1)
                  , period = period
-                 , acc = { val = 0, count = 0, prev = nil }
+                 , acc = { val = 0, count = 0 }
                  }
 
     setmetatable(self, {__index = MovingAverage})
@@ -91,9 +90,7 @@ local Trend = {}
 
 function Trend:onValue(val, now, quant)
 
-    if not val then
-        return
-    end
+    assert(val)
     if not self.trend then
         self.values:reset(val)
         self.times:reset(now)
