@@ -52,7 +52,7 @@ local q_base_strategy =
             , maxLoss = 1000                 -- максимальная приемлимая потеря
 
             -- расписание работы
-            -- [[ UAT
+            --[[ UAT
                          -- 10:01 - 13:00 
             , schedule = { { period=q_time.interval("10:01", "12:55"), phase=CONTINUOUS_TRADING }
                          , { period=q_time.interval("12:55", "13:00"), phase=CLOSING_POSITIONS }
@@ -70,11 +70,12 @@ local q_base_strategy =
                          , { period=q_time.interval("21:55", "22:00"), phase=CLOSING_POSITIONS }
                          }
             -- ]]
-            --[[ PROD
-                         -- 10:01 - 14:00 
-            , schedule = { { period=q_time.interval("10:01", "13:55"), phase=CONTINUOUS_TRADING }
+            -- [[ PROD
+                         -- 11:30 - 14:00 
+            , schedule = { { period=q_time.interval("11:30", "13:55"), phase=CONTINUOUS_TRADING }
                          , { period=q_time.interval("13:55", "14:00"), phase=CLOSING_POSITIONS }
                          -- 14:06 - 18:45
+                         
                          , { period=q_time.interval("14:06", "18:40"), phase=CONTINUOUS_TRADING }
                          , { period=q_time.interval("18:40", "18:45"), phase=CLOSING_POSITIONS }
                          -- 19:06 - 23:45
