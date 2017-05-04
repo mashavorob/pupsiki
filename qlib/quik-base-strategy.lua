@@ -75,7 +75,11 @@ local q_base_strategy =
             , schedule = { { period=q_time.interval("11:30", "13:55"), phase=CONTINUOUS_TRADING }
                          , { period=q_time.interval("13:55", "14:00"), phase=CLOSING_POSITIONS }
                          -- 14:06 - 18:45
-                         
+                        
+                         , { period=q_time.interval("14:06", "17:50"), phase=CONTINUOUS_TRADING }
+                         , { period=q_time.interval("17:50", "18:00"), phase=CLOSING_POSITIONS }
+                         }
+                        --[[
                          , { period=q_time.interval("14:06", "18:40"), phase=CONTINUOUS_TRADING }
                          , { period=q_time.interval("18:40", "18:45"), phase=CLOSING_POSITIONS }
                          -- 19:06 - 23:45
