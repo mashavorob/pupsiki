@@ -33,18 +33,18 @@ local q_scalper =
         , enterSpread       = 0         -- отступ от края стакана для открытия позиции
 
         , params = 
-            { { name="avgFactorPrice", min=1,    max=1e7, step=10,    precision=1     }
+            { { name="avgFactorPrice", min=1,    max=1e7, step=50,    precision=5   }
             , { name="avgFactorOpen",  min=1,    max=1e7, step=10,    precision=1   }
-            , { name="priceCandle",    min=0,    max=600, step=10,    precision=0.1   }
+            , { name="priceCandle",    min=0,    max=600, step=0.1,    precision=0.05   }
             , { name="historyLen"
-            ,   min=3
+            ,   min=1
             ,   max=1e7
             ,   step=10
             ,   precision=1     
             ,   get_min = function(self) return self.priceCandle*2.01 end
             }
             , { name="sensitivity",    min=0,    max=1e5, step=0.001, precision=0.001 }
-            , { name="enterSpread",    min=-100, max=100, step=1,     precision=1     }
+            , { name="enterSpread",    min=-100, max=100, step=3,     precision=1     }
 
             --[[
             
