@@ -11,11 +11,11 @@
 # or enable modeline in your .vimrc
 ]]
 
-avd = {}
+local avd = {}
 
 local function hashParams(func)
     local hash = ""
-    for _,info in ipairs(func.params) do
+    for _,info in ipairs(func.s_params.descrs) do
         hash = hash .. info.name .. ":" .. tostring( func["get_" .. info.name](func) ) .. " "
     end
     return hash
@@ -37,7 +37,7 @@ local function roundStep(info, step)
 end
 
 local function maximizeParam(cache, func, max, index)
-    local info = func.params[index]
+    local info = func.s_params.descrs[index]
 
     local direction = 1
     local step = roundStep(info)
@@ -115,7 +115,7 @@ local function maximizeParam(cache, func, max, index)
 end
 
 local function makeClone(func)
-    for _, info in ipairs(func.params) do
+    for _, info in ipairs(func.s_params.descrs) do
         local get_param = "get_" .. info.name
         local set_param = "set_" .. info.name
         if func[get_param] == nil then
@@ -130,7 +130,7 @@ local function makeClone(func)
         end
     end
 
-    for _,info in ipairs(func.params) do
+    for _,info in ipairs(func.s_params.descrs) do
         assert( type(func["get_" .. info.name]) == "function"
               , string.format("type(get_%s)=%s", info.name, type(func["get_" .. info.name])) )
         assert( type(func["set_" .. info.name]) == "function"
@@ -157,7 +157,7 @@ end
 local function printParams(func)
     local val = func:func()
     print("Parameters:")
-    for _, info in ipairs(func.params) do
+    for _, info in ipairs(func.s_params.descrs) do
         print(string.format("%15s: ", info.name) .. func["get_" .. info.name](func))
     end
     print(string.format("%15s: ", "result") .. val)
@@ -174,7 +174,7 @@ local function maximizeAllParams(func)
 
     while true do
 
-        for i,_ in ipairs(func.params) do
+        for i,_ in ipairs(func.s_params.descrs) do
             newMax = maximizeParam(cache, clone, newMax, i)
         end
         if newMax <= max then
@@ -255,7 +255,7 @@ function avd.getTestSuite()
 
         local before, after, res = avd.maximize(func)
         assert(nil ~= res)
-        assert(math.abs(res.x) <= func.params[1].precision)
+        assert(math.abs(res.x) <= func.s_params.descrs[1].precision)
     end
     function testSuite.test_1d_m1()
         local func = {
@@ -272,7 +272,7 @@ function avd.getTestSuite()
 
         local before, after, res = avd.maximize(func)
         assert(nil ~= res)
-        assert(math.abs(res.x) <= func.params[1].precision)
+        assert(math.abs(res.x) <= func.s_params.descrs[1].precision)
     end
     function testSuite.test_1d_right_optimal()
         local func = {
@@ -305,7 +305,7 @@ function avd.getTestSuite()
 
         local before, after, res = avd.maximize(func)
         assert(nil ~= res)
-        assert(math.abs(res.x - 1) < func.params[1].precision)
+        assert(math.abs(res.x - 1) < func.s_params.descrs[1].precision)
     end
     function testSuite.test_1d_left_optimal()
         local func = {
@@ -338,7 +338,7 @@ function avd.getTestSuite()
 
         local before, after, res = avd.maximize(func)
         assert(nil ~= res)
-        assert(math.abs(res.x + 1) < func.params[1].precision)
+        assert(math.abs(res.x + 1) < func.s_params.descrs[1].precision)
     end
     function testSuite.test_2d()
         local func = {
@@ -357,8 +357,8 @@ function avd.getTestSuite()
 
         local before, after, res = avd.maximize(func)
         assert(nil ~= res)
-        assert(math.abs(res.x) < func.params[1].precision)   
-        assert(math.abs(res.y) < func.params[2].precision)   
+        assert(math.abs(res.x) < func.s_params.descrs[1].precision)   
+        assert(math.abs(res.y) < func.s_params.descrs[2].precision)   
     end
     function testSuite.test_2d_func_fail()
         local func = {
@@ -417,8 +417,10 @@ function avd.getTestSuite()
 
         local before, after, res = avd.maximize(func)
         assert(nil ~= res)
-        assert(math.abs(res:get_x()) < func.params[1].precision)   
-        assert(math.abs(res:get_y()) < func.params[2].precision)   
+        assert(math.abs(res:get_x()) < func.s_params.descrs[1].precision)   
+        assert(math.abs(res:get_y()) < func.s_params.descrs[2].precision)   
     end
     return testSuite
 end
+
+return avd

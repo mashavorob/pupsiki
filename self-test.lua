@@ -15,9 +15,8 @@
 local q_jit = require("qlib/quik-jit")
 local q_config = require("qlib/quik-etc")
 local q_log = require("qlib/quik-logger")
-assert(require("qlib/quik-avd"))
-assert(require("qlib/quik-book"))
-local q_container = assert(require("qlib/quik-jit-l2-data"))
+local avd = require("qlib/quik-avd")
+local q_container = require("qlib/quik-jit-l2-data")
 
 print("")
 print("Quik library unit tests (c) 2016")
@@ -34,7 +33,6 @@ local unitTests = {
     csvlog = q_log.getTestSuite(),
     config = q_config.getTestSuite(),
     avd = avd.getTestSuite(),
-    book = q_book.getTestSuite(),
     q_container = q_container.getTestSuite(), 
 }
 
