@@ -34,9 +34,9 @@ local q_scalper =
         , fixSpread         = 50        -- фиксация прибыли
 
         , params = 
-            { { name="avgFactorPrice", min=1,    max=1e7, step=10,    precision=1     }
-            , { name="avgFactorOpen",  min=1,    max=1e7, step=10,    precision=1   }
-            , { name="priceCandle",    min=0,    max=600, step=10,    precision=0.1   }
+            { { name="avgFactorPrice", min=1,    max=1e7, step=20,    precision=5   }
+            , { name="avgFactorOpen",  min=1,    max=1e7, step=20,    precision=1   }
+            , { name="priceCandle",    min=0,    max=600, step=0.1,   precision=0.05}
             , { name="historyLen"
             ,   min=3
             ,   max=1e7
@@ -44,7 +44,7 @@ local q_scalper =
             ,   precision=1     
             ,   get_min = function(self) return self.priceCandle*2.01 end
             }
-            , { name="sensitivity",    min=0,    max=1e5, step=0.001, precision=0.001 }
+            , { name="sensitivity",    min=0,    max=1e5, step=0.01,  precision=0.001 }
             , { name="enterSpread",    min=-100, max=100, step=1,     precision=1     }
             , { name="fixSpread",      min=0,    max=1e5, step=1,     precision=1     }
 
