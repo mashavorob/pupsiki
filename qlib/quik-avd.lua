@@ -71,8 +71,8 @@ local function maximizeParam(cache, func, max, index)
             -- make clone
             local clone = func:clone()
             local param = getParam(func) + step*direction
-            local lower = info.get_min(func)
-            local upper = info.get_max(func)
+            local lower = info.get_min(func.s_params.values)
+            local upper = info.get_max(func.s_params.values)
             if param < lower then
                 param = lower
             elseif param > upper then
