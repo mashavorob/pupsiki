@@ -36,7 +36,7 @@ local q_scalper =
             , { name="avgFactorOpen",  min=1,    max=1e7, step=10,    precision=1   }
             , { name="historyLen",     min=2,    max=1e4, step=10,    precision=1   }
             , { name="sensitivity",    min=0,    max=1e5, step=0.001, precision=0.001 }
-            , { name="enterSpread",    min=-100, max=100, step=1,     precision=1     }
+            , { name="enterSpread",    min=-100, max=100, step=3,     precision=1     }
 
             --[[
             

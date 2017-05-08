@@ -26,6 +26,7 @@ Where
         
     <operation> could be:
     run         - run specified strategy
+    optimize    - optimize specified strategy
     probe       - probe different values of a parameter
     --help,/?   - show this message
     
@@ -160,6 +161,21 @@ end
 local function runStrategy(strategy, logs)
     local margin = q_simulator.runStrategy(strategy, logs)
     print(string.format("total margin: %f", margin))
+end
+
+local function optimizeStrategy(strategy, logs)
+    local before, after, params = q_simulator.optimizeStrategy(strategy, logs)
+
+    if params == nil then
+        print("Optimization did not find better paramters")
+    else
+        print("Optimal parameters are:")
+        for k,v in pairs(params) do
+            print(string.format("%s = %s", k, tostring(v)))
+        end
+        print(string.format("Margin before optimization: %f", before))
+        print(string.format("Margin after  optimization: %f", after))
+    end
 end
 
 local function paramsToString(params)
@@ -344,6 +360,9 @@ print(string.format("op=%s strategy=%s%s", op, strategy, ll))
 if op == "run" then
     print(string.format("Running %s", strategy))
     runStrategy(strategy, logs)
+elseif op == "optimize" then
+    print(string.format("Optimizing %s", strategy))
+    optimizeStrategy(strategy, logs)
 elseif op == "probe" then
     print(string.format("Probbing %s for %d parameters"
         , strategy, #options))

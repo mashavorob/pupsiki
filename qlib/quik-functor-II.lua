@@ -133,7 +133,16 @@ function q_functor:freeStrategy()
 end
 
 function q_functor:runDay(day)
-    
+    local res = self:runDayIsolated(day)
+    collectgarbage()
+    collectgarbage()
+    return res
+end
+
+function q_functor:runDayIsolated(day)
+    local env = {}
+    setmetatable(env, {__index=_G})
+    local _ENV = env
     self.book = q_book.create()
     self.strategy = nil
     self.client = nil
@@ -192,7 +201,6 @@ function q_functor:runDay(day)
     instance = nil
     self:freeStrategy()
     self.book.reset()
-
     return margin
 end
 

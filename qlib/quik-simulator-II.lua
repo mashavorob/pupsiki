@@ -13,7 +13,7 @@
 
 local q_fname = require("qlib/quik-fname")
 local q_utils = require("qlib/quik-utils")
-assert(require("qlib/quik-avd"))
+local avd = require("qlib/quik-avd")
 local q_functor = require("qlib/quik-functor-II")
 local q_book = require("qlib/quik-book-II")
 local q_persist = require("qlib/quik-l2-persist")
@@ -84,6 +84,16 @@ function q_simulator.runStrategy(name, data, params)
         end
     end
     return functor:func()
+end
+
+function q_simulator.optimizeStrategy(name, data)
+    local functor = q_functor.create(name, data, etc)
+    instance = nil
+    local before, after, clone = avd.maximize(functor)
+    if clone == nil then
+        return
+    end
+    return before, after, clone.params
 end
 
 return q_simulator
