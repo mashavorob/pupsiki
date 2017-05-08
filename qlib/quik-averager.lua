@@ -25,24 +25,24 @@ local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorPrice    = 900       -- коэффициент осреднения цены
-        , avgFactorOpen     = 100       -- коэффициент осреднения цены для открытия позиции
+        { avgFactorPrice    = 890       -- коэффициент осреднения цены
+        , avgFactorOpen     = 86       -- коэффициент осреднения цены для открытия позиции
         , priceCandle       = 0.25      -- ширина свечи цены, сек
         , historyLen        = 25        -- длина истории для вычисления локальных экстремумов
         , sensitivity       = 0.08      -- порог чувствительности
         , enterSpread       = 0         -- отступ от края стакана для открытия позиции
 
         , params = 
-            { { name="avgFactorPrice", min=1,    max=1e7, step=50,    precision=5   }
-            , { name="avgFactorOpen",  min=1,    max=1e7, step=10,    precision=1   }
-            , { name="priceCandle",    min=0,    max=600, step=0.1,    precision=0.05   }
-            , { name="historyLen"
+            { { name="historyLen"
             ,   min=1
             ,   max=1e7
             ,   step=10
             ,   precision=1     
             ,   get_min = function(self) return self.priceCandle*2.01 end
             }
+            , { name="avgFactorPrice", min=1,    max=1e7, step=50,    precision=5   }
+            , { name="avgFactorOpen",  min=1,    max=1e7, step=10,    precision=1   }
+            , { name="priceCandle",    min=0,    max=600, step=0.1,    precision=0.05   }
             , { name="sensitivity",    min=0,    max=1e5, step=0.001, precision=0.001 }
             , { name="enterSpread",    min=-100, max=100, step=3,     precision=1     }
 
