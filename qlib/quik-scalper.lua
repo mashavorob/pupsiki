@@ -25,20 +25,20 @@ local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorPrice    = 175       -- коэффициент осреднения цены
-        , avgFactorOpen     = 13        -- коэффициент осреднения цены для открытия позиции
-        , historyLen        = 20        -- длина истории для вычисления локальных экстремумов
+        { avgFactorPrice    = 181       -- коэффициент осреднения цены
+        , avgFactorOpen     = 26        -- коэффициент осреднения цены для открытия позиции
+        , historyLen        = 9         -- длина истории для вычисления локальных экстремумов
         , sensitivity       = 0.08      -- порог чувствительности
-        , enterSpread       = 0         -- отступ от края стакана для открытия позиции
+        , enterSpread       = -3         -- отступ от края стакана для открытия позиции
         , fixSpread         = 50        -- фиксация прибыли
 
         , params = 
-            { { name="avgFactorPrice", min=1,    max=1e7, step=10,    precision=1   }
-            , { name="avgFactorOpen",  min=1,    max=1e7, step=10,    precision=1   }
+            { { name="avgFactorPrice", min=1,    max=1e7, step=25,    precision=1   }
+            , { name="avgFactorOpen",  min=1,    max=1e7, step=25,    precision=1   }
             , { name="historyLen",     min=2,    max=1e4, step=10,    precision=1   }
-            , { name="sensitivity",    min=0,    max=1e5, step=0.001, precision=0.001 }
-            , { name="enterSpread",    min=-100, max=100, step=1,     precision=1     }
-            , { name="fixSpread",      min=0,    max=1e5, step=1,     precision=1     }
+            , { name="sensitivity",    min=0,    max=1e5, step=0.003, precision=0.001 }
+            , { name="enterSpread",    min=-100, max=100, step=5,     precision=1     }
+            , { name="fixSpread",      min=0,    max=1e5, step=5,     precision=1     }
 
             --[[
             
