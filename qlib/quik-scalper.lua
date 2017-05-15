@@ -25,28 +25,32 @@ local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorPrice    = 890       -- коэффициент осреднения цены
+        { avgFactorPrice    = 892       -- коэффициент осреднения цены
+        , avgFactorTrend    = 37        -- коэффициент осреднения тренда
         , avgFactorOpen     = 86        -- коэффициент осреднения цены для открытия позиции
         , priceCandle       = 0.25      -- ширина свечи цены, сек
-        , historyLen        = 25        -- длина истории для вычисления локальных экстремумов
-        , sensitivity       = 0.08      -- порог чувствительности
+        , sensitivity       = 0.081     -- порог чувствительности
         , enterSpread       = 0         -- отступ от края стакана для открытия позиции
-        , fixSpread         = 50        -- фиксация прибыли
+        , fixSpread         = 87        -- фиксация прибыли
 
         , params = 
-            { { name="avgFactorPrice", min=1,    max=1e7, step=20,    precision=5   }
-            , { name="avgFactorOpen",  min=1,    max=1e7, step=20,    precision=1   }
-            , { name="priceCandle",    min=0,    max=600, step=0.1,   precision=0.05}
+            { { name="avgFactorTrend", min=1,    max=1e7, step=5,     precision=1   }
+            , { name="avgFactorPrice", min=1,    max=1e7, step=5,     precision=1   }
+            , { name="avgFactorOpen",  min=1,    max=1e7, step=5,     precision=1   }
+            --, { name="priceCandle",    min=0.25, max=0.25, step=0.1,  precision=0.05}
+            
+            --[[ parameter with function
             , { name="historyLen"
             ,   min=3
             ,   max=1e7
             ,   step=10
             ,   precision=1     
             ,   get_min = function(self) return self.priceCandle*2.01 end
-            }
+            }  --]]
+
             , { name="sensitivity",    min=0,    max=1e5, step=0.01,  precision=0.001 }
-            , { name="enterSpread",    min=-100, max=100, step=1,     precision=1     }
-            , { name="fixSpread",      min=0,    max=1e5, step=1,     precision=1     }
+            , { name="enterSpread",    min=-100, max=100, step=10,    precision=1     }
+            , { name="fixSpread",      min=0,    max=1e5, step=10,    precision=1     }
 
             --[[
             
@@ -109,8 +113,8 @@ function q_scalper.create(etc)
             , ma_ask = q_bricks.MovingAverage.create(self.etc.avgFactorPrice, self.etc.priceCandle)
             , ma_bid_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen, self.etc.priceCandle)
             , ma_ask_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen, self.etc.priceCandle)
-            , trend_bid = q_bricks.Trend.create(self.etc.historyLen/self.etc.priceCandle)
-            , trend_ask = q_bricks.Trend.create(self.etc.historyLen/self.etc.priceCandle)
+            , trend_bid = q_bricks.Trend.create(self.etc.avgFactorTrend)
+            , trend_ask = q_bricks.Trend.create(self.etc.avgFactorTrend)
             , alpha_bid = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
             , alpha_ask = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
             , alpha_aggr = q_bricks.AlphaAgg.create()

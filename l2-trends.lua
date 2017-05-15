@@ -34,10 +34,9 @@ end
 local xbit = bit or bit32
 
 local period_price = 0.25
-local period_trend = 25
 
 local avg_price = 900
-local avg_trend = period_trend/period_price
+local avg_trend = 25
 
 local sensitivity = 0.08
 local spread_open = 0

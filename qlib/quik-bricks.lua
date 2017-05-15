@@ -88,36 +88,26 @@ end
 
 local Trend = {}
 
-function Trend:onValue(val, now, quant)
-
+function Trend:onValue(val, now, quantum)
     assert(val)
     if not self.trend then
-        self.values:reset(val)
-        self.times:reset(now)
+        self.prev = { val = val, t = now }
+        self.ma_trend = 0
         self.trend = 0
     else
-        if quant then
-            self.values:push_back(val)
-            self.times:push_back(now)
-        end
-        
-        local t0 = self.times:getAt(self.times.size)
-        local period = now - t0
-        if period > 0 then
-            --local f0, f1, f2 = self.values:getAt(self.values.size), self.values:getAt(math.floor(self.values.size/2)), val
-            --self.trend = (f0-4*f1+3*f2)/period
-            local f0, f1 = self.values:getAt(self.values.size), val
-            self.trend = (f1 - f0)/period
-        else
-            self.trend = 0
+        local trend = (val - self.prev.val)/(now - self.prev.t)
+        self.trend = self.ma_trend + self.k*(trend - self.ma_trend)
+        if quantum then
+            self.prev = { val = val, t = now }
+            self.ma_trend = self.trend
         end
     end
 end
 
-function Trend.create(size)
-    local self = { values = q_cbuffer.create(size)
-                 , times = q_cbuffer.create(size)
+function Trend.create(averageFactor)
+    local self = { k = 1/(averageFactor + 1)
                  , trend = nil
+                 , prev = nil
                  }
     setmetatable(self, {__index = Trend})
     return self
