@@ -67,6 +67,70 @@ function MovingAverage.create(averageFactor, period)
     return self
 end
 
+local VolumeCounter = {}
+
+function VolumeCounter:onTime(now)
+    if not self.time then
+        self.time = now
+        return false
+    end
+    if now > self.time + self.period then
+        local buy = self.buy.val/self.period
+        self.ma_abs_buy = self.ma_abs_buy + self.k*(buy - self.ma_abs_buy)
+        self.buy.val = 0
+        self.buy.count = 0
+        
+        local sell = self.sell.val/self.period
+        self.ma_abs_sell = self.ma_abs_sell + self.k*(sell - self.ma_abs_sell)
+        self.sell.val = 0
+        self.sell.count = 0
+
+        local volume = buy - sell
+        self.ma_abs_volume = self.ma_abs_volume + self.k*(volume - self.ma_abs_volume)
+
+        self.ma_buy = self.ma_abs_buy/self.ma_abs_volume
+        self.ma_sell = self.ma_abs_sell/self.ma_abs_volume
+        self.ma_volume = self.ma_buy + self.ma_sell
+
+        self.time = self.time + self.period
+        self.count = self.buy.count + self.sell.count
+        
+        return true
+    end
+    return false
+end
+
+function VolumeCounter:onAllTrade(trade)
+    local sign = ((trade.flags % 2) ~= 0) and -1 or 1
+
+    if (trade.flags % 2) == 0 then
+        self.buy.val = self.buy.val + trade.qty
+        self.buy.count = self.buy.count + 1
+    else
+        self.sell.val = self.sell.val - trade.qty
+        self.sell.count = self.sell.count + 1
+    end
+
+    return false
+end
+
+function VolumeCounter.create(averageFactor, period)
+    local self = { k = 1/(averageFactor + 1)
+                 , period = period
+                 , buy = { val = 0, count = 0 }
+                 , sell = { val = 0, count = 0 }
+                 , ma_abs_buy = 0
+                 , ma_buy = 0
+                 , ma_abs_sell = 0
+                 , ma_sell = 0
+                 , ma_abs_volume = 0
+                 , ma_volume = 0
+                 , ma_count = 0
+                 }
+    setmetatable(self, {__index = VolumeCounter})
+    return self
+end
+
 local Trend = {}
 
 function Trend:onValue(val)
@@ -225,6 +289,7 @@ local q_bricks = { PriceTracker = PriceTracker
                  , AlphaAgg = AlphaAgg
                  , AlphaFilterOpen = AlphaFilterOpen
                  , AlphaFilterFix = AlphaFilterFix
+                 , VolumeCounter = VolumeCounter
                  }
 
 return q_bricks

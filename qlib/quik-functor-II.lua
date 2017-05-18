@@ -160,7 +160,7 @@ function q_functor:runDayIsolated(day)
         }
     local balanceAtStart = 0
     local file = assert(io.open(day,"r"))
-    local reportPeriod = 30
+    local reportPeriod = 15
     local reportTime = os.clock() - reportPeriod - 1
     local stopTime
     for line in file:lines() do
@@ -201,6 +201,7 @@ function q_functor:runDayIsolated(day)
     instance = nil
     self:freeStrategy()
     self.book.reset()
+    io.stderr:write(string.format("day margin is: %.0f\n", margin))
     return margin
 end
 

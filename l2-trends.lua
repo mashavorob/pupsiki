@@ -36,19 +36,27 @@ local xbit = bit or bit32
 local avg_price = 100
 local avg_trend = 15
 
-local sensitivity = 0.08
+local avg_volume = 1000
+
+local sensitivity = 0.081
 local spread_open = 0
-local spread_fix = 40
+local spread_fix = 87
 
 local avg_price_open = 10
 
 local pricer = q_bricks.PriceTracker.create()
+
 local ma_bid = q_bricks.MovingAverage.create(avg_price)
 local ma_ask = q_bricks.MovingAverage.create(avg_price)
+
 local ma_bid_open = q_bricks.MovingAverage.create(avg_price_open)
 local ma_ask_open = q_bricks.MovingAverage.create(avg_price_open)
+
 local ptrend_bid = q_bricks.Trend.create(avg_trend)
 local ptrend_ask = q_bricks.Trend.create(avg_trend)
+
+local volume = q_bricks.VolumeCounter.create(avg_volume)
+
 local alpha_bid = q_bricks.AlphaByTrend.create(sensitivity)
 local alpha_ask = q_bricks.AlphaByTrend.create(sensitivity)
 local alpha_aggr = q_bricks.AlphaAgg.create()
@@ -64,6 +72,10 @@ function processEvent(ev)
         now = now or t
         now = math.max(now, t)
     end
+
+    while volume:onTime(now) do
+    end
+
     if ev.event == "onQuote" then
         local new_bid, new_ask, new_mid = pricer:onQuote(ev.l2)
 
@@ -89,8 +101,8 @@ function processEvent(ev)
             changed = true
         end
     elseif ev.event == "onAllTrade" then
-        --trend:onAllTrade(ev.trade)
-        --changed = true
+        volume:onAllTrade(ev.trade)
+        changed = true
     end
 
     if changed and now and ma_bid.val and ma_ask.val then
@@ -106,15 +118,21 @@ function processEvent(ev)
             , alpha_aggr = alpha_aggr.alpha
             , alpha_open = alpha_open.alpha
             , alpha_fix  = alpha_fix.alpha
+            , sell_volume = volume.ma_sell
+            , buy_volume = volume.ma_buy
+            , volume = volume.ma_volume
             }
         local ln = string.format(
-            -- mid   price   price-open  trend   alpha-bid alpha-ask  alpha alpha-open alpha-fix
-            "%15.03f %15.03f %15.03f ".."%15.04f %15d " .. "%15d " .. "%15d %15d " ..  "%15d "
+            -- mid   price   price-open  trend   alpha-bid alpha-ask  alpha alpha-open alpha-fix   sell-volume buy-volume  volume
+            "%15.03f %15.03f %15.03f ".."%15.04f %15d " .. "%15d " .. "%15d %15d " ..  "%15d " .. "%15.04f ".."%15.04f ".."%15.04f"
             , data.mid, data.price, data.price_open, data.trend
             , data.alpha_bid, data.alpha_ask
             , data.alpha_aggr
             , data.alpha_open
             , data.alpha_fix
+            , data.sell_volume
+            , data.buy_volume
+            , data.volume
             )
         if not prevLn or ln ~= prevLn then
             prevLn = ln
@@ -137,11 +155,11 @@ end
 
 FPrint(
     "%12s " ..
-    -- 2   3    4    5    6    7    8    9    10
-    "%15s %15s %15s %15s %15s %15s %15s %15s %15s"
+    -- 2   3    4    5    6    7    8    9    10   11   12   13
+    "%15s %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s"
     , "time"
-    -- 2      3         4            5        6            7            8        9             10
-    , "mid", "price", "price-open", "trend", "alpha-bid", "alpha-ask", "alpha", "alpha-open", "alpha-fix"
+    -- 2      3         4            5        6            7            8        9             10           11          12         13
+    , "mid", "price", "price-open", "trend", "alpha-bid", "alpha-ask", "alpha", "alpha-open", "alpha-fix", "sell-vol", "buy-vol", "vol"
     )
 
 local ln = 0
