@@ -1,5 +1,9 @@
 unset multiplot
 
+fname = "si-10.txt"
+from = "11:00:00"
+to   = "14:00:00"
+
 set term wxt 0
 
 set multiplot layout 2,1 
@@ -16,105 +20,32 @@ set autoscale y
 set autoscale y2
 set x2zeroaxis
 set grid
-set xrange ["10:00:00" : "14:00:00"]
+set xrange [from : to]
 set y2range [-2 : 2]
 plot \
-    "si.txt" using 1:2 title 'Spot' with lines axes x1y1, \
-    "si.txt" using 1:3 title 'Price' with lines axes x1y1, \
-    "si.txt" using 1:4 title 'Price-Open' with lines axes x1y1, \
-    "si.txt" using 1:9 title 'Alpha-Open' with lines axes x1y2
+    fname using 1:2 title 'Spot' with lines axes x1y1, \
+    fname using 1:3 title 'Price' with lines axes x1y1, \
+    fname using 1:4 title 'Price-Open' with lines axes x1y1, \
+    fname using 1:9 title 'Alpha-Open' with lines axes x1y2
 
-set title "Moving average trend"
+set title "Traded volume"
 set xdata time
 set timefmt "%H:%M:%S"
 set format x "%H:%M:%.3S"
 set xtics out rotate by 0
 set xlabel "Time"
 set ylabel "Spot"
-set y2label "Trend"
+set y2label "Volume"
 set autoscale y
 set autoscale y2
 set y2tics
 set xzeroaxis
 set x2zeroaxis
 set grid
-set xrange ["10:00:00" : "14:00:00"]
+set xrange [from : to]
 plot \
-    "si.txt" using 1:2 title 'Spot' with lines axes x1y1, \
-    "si.txt" using 1:5 title 'Trend' with lines axes x1y2
-
-#set title "Time quantums"
-#set xdata time
-#set timefmt "%H:%M:%S"
-#set format x "%H:%M:%.3S"
-#set xtics out rotate by 0
-#set xlabel "Time"
-#set ylabel "Count"
-#set autoscale y
-#set xzeroaxis
-#set grid
-#set xrange ["10:00:00" : "14:00:00"]
-#plot \
-#    "si.txt" using 1:11 title 'bids per quantum' with lines axes x1y1, \
-#    "si.txt" using 1:12 title 'asks per quantum' with lines axes x1y1
-
-unset multiplot
-
-set term wxt 1
-
-set multiplot layout 2,1 
-
-set title "Prices"
-set xdata time
-set timefmt "%H:%M:%S"
-set format x "%H:%M:%.3S"
-set xtics out rotate by 0
-set xlabel "Time"
-set ylabel "Price"
-set y2label "Alpha"
-set autoscale y
-set autoscale y2
-set x2zeroaxis
-set grid
-set xrange ["14:00:00" : "18:00:00"]
-set y2range [-2 : 2]
-plot \
-    "si.txt" using 1:2 title 'Spot' with lines axes x1y1, \
-    "si.txt" using 1:3 title 'Price' with lines axes x1y1, \
-    "si.txt" using 1:4 title 'Price-Open' with lines axes x1y1, \
-    "si.txt" using 1:9 title 'Alpha-Open' with lines axes x1y2
-
-# set title "Time quantums"
-# set xdata time
-# set timefmt "%H:%M:%S"
-# set format x "%H:%M:%.3S"
-# set xtics out rotate by 0
-# set xlabel "Time"
-# set ylabel "Count"
-# set autoscale y
-# set xzeroaxis
-# set grid
-# set xrange ["14:00:00" : "18:00:00"]
-# plot \
-#     "si.txt" using 1:11 title 'bids per quantum' with lines axes x1y1, \
-#     "si.txt" using 1:12 title 'asks per quantum' with lines axes x1y1
-
-set title "Moving average trend"
-set xdata time
-set timefmt "%H:%M:%S"
-set format x "%H:%M:%.3S"
-set xtics out rotate by 0
-set xlabel "Time"
-set ylabel "Spot"
-set y2label "Trend"
-set autoscale y
-set autoscale y2
-set y2tics
-set xzeroaxis
-set x2zeroaxis
-set grid
-set xrange ["14:00:00" : "18:00:00"]
-plot \
-    "si.txt" using 1:2 title 'Spot' with lines axes x1y1, \
-    "si.txt" using 1:5 title 'Trend' with lines axes x1y2
+    fname using 1:2 title 'Spot' with lines axes x1y1, \
+    fname using 1:13 title 'Volume' with lines axes x1y2, #\
+    fname using 1:11 title 'Sell Volume' with lines axes x1y2, \
+    fname using 1:12 title 'Buy Volume' with lines axes x1y2, \
 
