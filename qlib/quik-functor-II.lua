@@ -21,6 +21,7 @@ local q_order = require("qlib/quik-order")
 --local ProFi = require("ProFi")
 local simTime = 0
 local simTransId = 1000000
+local lossPenaltyWeight = 0.5
 
 
 local instance = nil
@@ -133,10 +134,10 @@ function q_functor:freeStrategy()
 end
 
 function q_functor:runDay(day)
-    local res = self:runDayIsolated(day)
+    local margin, maxLoss = self:runDayIsolated(day)
     collectgarbage()
     collectgarbage()
-    return res
+    return margin, maxLoss
 end
 
 function q_functor:runDayIsolated(day)
@@ -163,6 +164,11 @@ function q_functor:runDayIsolated(day)
     local reportPeriod = 15
     local reportTime = os.clock() - reportPeriod - 1
     local stopTime
+
+    local minBalance     = 0
+    local maxBalance     = 0
+    local maxLoss        = 0
+
     for line in file:lines() do
         local success, rec = pcall(q_persist.parseLine, line)
         if success then
@@ -175,10 +181,24 @@ function q_functor:runDayIsolated(day)
             if rec_time and rec_time > stopTime then
                 break
             end
+            local margin = self.client and (self.client:getBalance(book) - balanceAtStart) or 0
+            if margin > maxBalance then
+                maxBalance = margin
+                minBalance = margin
+            elseif margin < minBalance then
+                minBalance = margin
+                local loss = maxBalance - minBalance
+                maxLoss = math.max(maxLoss, loss)
+            end
+                
             if rec_time and now >= reportTime + reportPeriod and self.client then
                 reportTime = now
-                local margin = self.client:getBalance(book) - balanceAtStart
-                io.stderr:write(string.format("processing %s, margin: %.0f\n", os.date('%Y%m%d-%H:%M:%S', rec_time), margin))
+                io.stderr:write(string.format(
+                    "processing %s, margin: %.0f max loss: %.0f \n"
+                    , os.date('%Y%m%d-%H:%M:%S', rec_time)
+                    , margin
+                    , maxLoss
+                    ))
             end
             if not self.strategy and not headers[rec.event] then
                 self.strategy = self:createStrategy()
@@ -202,7 +222,8 @@ function q_functor:runDayIsolated(day)
     self:freeStrategy()
     self.book.reset()
     io.stderr:write(string.format("day margin is: %.0f\n", margin))
-    return margin
+    io.stderr:write(string.format(" max loss was: %.0f\n", maxLoss))
+    return margin, maxLoss
 end
 
 
@@ -232,13 +253,16 @@ function q_functor:func()
     end
 
     local margin = 0
+    local maxLoss = 0
 
     for _,day in ipairs(self.s_params.data) do
         local clone = self:clone()
-        margin = margin + clone:runDay(day)
+        local dayMargin, dayMaxLoss = clone:runDay(day)
+        margin = margin + dayMargin
+        maxLoss = maxLoss + dayMaxLoss
     end
 
-    return margin
+    return margin - lossPenaltyWeight*maxLoss
 end
 
 function Subscribe_Level_II_Quotes(class, asset)

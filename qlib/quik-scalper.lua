@@ -25,18 +25,19 @@ local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorPrice    = 892       -- коэффициент осреднения цены
-        , avgFactorTrend    = 37        -- коэффициент осреднения тренда
+        { avgFactorTrend    = 37        -- коэффициент осреднения тренда
+        , avgFactorPrice    = 880       -- коэффициент осреднения цены
         , avgFactorOpen     = 86        -- коэффициент осреднения цены для открытия позиции
-        , priceCandle       = 0.25      -- ширина свечи цены, сек
         , sensitivity       = 0.081     -- порог чувствительности
+        , fixSpread         = 99        -- фиксация прибыли
+
+        , priceCandle       = 0.25      -- ширина свечи цены, сек
         , enterSpread       = 0         -- отступ от края стакана для открытия позиции
-        , fixSpread         = 87        -- фиксация прибыли
 
         , params = 
-            { { name="avgFactorTrend", min=1,    max=1e7, step=5,     precision=1   }
-            , { name="avgFactorPrice", min=1,    max=1e7, step=5,     precision=1   }
-            , { name="avgFactorOpen",  min=1,    max=1e7, step=5,     precision=1   }
+            { { name="avgFactorTrend", min=1,    max=1e7, step=20,    precision=1   }
+            , { name="avgFactorPrice", min=1,    max=1e7, step=100,   precision=1   }
+            , { name="avgFactorOpen",  min=1,    max=1e7, step=20,    precision=1   }
             --, { name="priceCandle",    min=0.25, max=0.25, step=0.1,  precision=0.05}
             
             --[[ parameter with function
@@ -49,7 +50,7 @@ local q_scalper =
             }  --]]
 
             , { name="sensitivity",    min=0,    max=1e5, step=0.01,  precision=0.001 }
-            , { name="enterSpread",    min=-100, max=100, step=10,    precision=1     }
+            --, { name="enterSpread",    min=-100, max=100, step=10,    precision=1     }
             , { name="fixSpread",      min=0,    max=1e5, step=10,    precision=1     }
 
             --[[
@@ -285,7 +286,7 @@ function q_scalper:onQuote(class, asset)
         end
     end
 
-    if new_mid then
+    if new_mid and market.trend_bid.trend and market.trend_ask.trend then
         market.alpha_bid:onValue(market.trend_bid.trend)
         market.alpha_ask:onValue(market.trend_ask.trend)
         market.alpha_aggr:aggregate(market.alpha_bid.alpha, market.alpha_ask.alpha)
