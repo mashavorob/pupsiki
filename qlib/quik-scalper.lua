@@ -28,7 +28,8 @@ local q_scalper =
         { avgFactorTrend    = 37        -- коэффициент осреднения тренда
         , avgFactorPrice    = 880       -- коэффициент осреднения цены
         , avgFactorOpen     = 86        -- коэффициент осреднения цены для открытия позиции
-        , sensitivity       = 0.081     -- порог чувствительности
+        , sensitivity1      = 0.04      -- порог чувствительности
+        , sensitivity2      = 0.10      -- порог чувствительности
         , fixSpread         = 99        -- фиксация прибыли
 
         , priceCandle       = 0.25      -- ширина свечи цены, сек
@@ -49,7 +50,20 @@ local q_scalper =
             ,   get_min = function(self) return self.priceCandle*2.01 end
             }  --]]
 
-            , { name="sensitivity",    min=0,    max=1e5, step=0.01,  precision=0.001 }
+            , { name="sensitivity1"
+            ,   min=0
+            ,   max=1e5
+            ,   step=0.01
+            ,   precision=0.001 
+            ,   get_max = function(self) return self.sensitivity2 end
+            }
+            , { name="sensitivity2"
+            ,   min=0
+            ,   max=1e5
+            ,   step=0.01
+            ,   precision=0.001 
+            ,   get_min = function(self) return self.sensitivity1 end
+            }
             --, { name="enterSpread",    min=-100, max=100, step=10,    precision=1     }
             , { name="fixSpread",      min=0,    max=1e5, step=10,    precision=1     }
 
@@ -116,15 +130,24 @@ function q_scalper.create(etc)
             , ma_ask_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen, self.etc.priceCandle)
             , trend_bid = q_bricks.Trend.create(self.etc.avgFactorTrend)
             , trend_ask = q_bricks.Trend.create(self.etc.avgFactorTrend)
-            , alpha_bid = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
-            , alpha_ask = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
             , alpha_aggr = q_bricks.AlphaAgg.create()
             }
             self.state.market.alpha_open = q_bricks.AlphaFilterOpen.create( self.etc.enterSpread
                                                                           , self.state.market.ma_bid_open
                                                                           , self.state.market.ma_ask_open
                                                                           )
+
             self.state.market.alpha_fix = q_bricks.AlphaFilterFix.create(self.etc.fixSpread)
+
+            self.state.market.alpha_bid = q_bricks.AlphaByTrend.create( self.state.market.alpha_fix
+                                                                      , self.etc.sensitivity1
+                                                                      , self.etc.sensitivity2
+                                                                      )
+
+            self.state.market.alpha_ask = q_bricks.AlphaByTrend.create( self.state.market.alpha_fix
+                                                                      , self.etc.sensitivity1
+                                                                      , self.etc.sensitivity2
+                                                                      )
             self.state.market.alpha = self.state.market.alpha_fix
 
     self.state.targetPos = 0

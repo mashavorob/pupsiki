@@ -25,20 +25,47 @@ local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorPrice    = 890       -- коэффициент осреднения цены
-        , avgFactorTrend    = 37        -- коэффициент осреднения тренда
-        , avgFactorOpen     = 86       -- коэффициент осреднения цены для открытия позиции
+        { avgFactorTrend    = 37        -- коэффициент осреднения тренда
+        , avgFactorPrice    = 880       -- коэффициент осреднения цены
+        , avgFactorOpen     = 86        -- коэффициент осреднения цены для открытия позиции
+        , sensitivity1      = 0.04      -- порог чувствительности
+        , sensitivity2      = 0.10      -- порог чувствительности
+        , fixSpread         = 99        -- фиксация прибыли
+
         , priceCandle       = 0.25      -- ширина свечи цены, сек
-        , sensitivity       = 0.08      -- порог чувствительности
         , enterSpread       = 0         -- отступ от края стакана для открытия позиции
 
         , params = 
-            { { name="avgFactorTrend", min=1,    max=1e7, step=5,     precision=1   }
-            , { name="avgFactorPrice", min=1,    max=1e7, step=1,     precision=1   }
-            , { name="avgFactorOpen",  min=1,    max=1e7, step=10,    precision=1   }
-            --, { name="priceCandle",    min=0,    max=600, step=0.1,    precision=0.05   }
-            , { name="sensitivity",    min=0,    max=1e5, step=0.001, precision=0.001 }
-            , { name="enterSpread",    min=-100, max=100, step=3,     precision=1     }
+            { { name="avgFactorTrend", min=1,    max=1e7, step=20,    precision=1   }
+            , { name="avgFactorPrice", min=1,    max=1e7, step=100,   precision=1   }
+            , { name="avgFactorOpen",  min=1,    max=1e7, step=20,    precision=1   }
+            --, { name="priceCandle",    min=0.25, max=0.25, step=0.1,  precision=0.05}
+            
+            --[[ parameter with function
+            , { name="historyLen"
+            ,   min=3
+            ,   max=1e7
+            ,   step=10
+            ,   precision=1     
+            ,   get_min = function(self) return self.priceCandle*2.01 end
+            }  --]]
+
+            , { name="sensitivity1"
+            ,   min=0
+            ,   max=1e5
+            ,   step=0.01
+            ,   precision=0.001 
+            ,   get_max = function(self) return self.sensitivity2 end
+            }
+            , { name="sensitivity2"
+            ,   min=0
+            ,   max=1e5
+            ,   step=0.01
+            ,   precision=0.001 
+            ,   get_min = function(self) return self.sensitivity1 end
+            }
+            --, { name="enterSpread",    min=-100, max=100, step=10,    precision=1     }
+            , { name="fixSpread",      min=0,    max=1e5, step=10,    precision=1     }
 
             --[[
             
@@ -103,15 +130,25 @@ function q_scalper.create(etc)
             , ma_ask_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen, self.etc.priceCandle)
             , trend_bid = q_bricks.Trend.create(self.etc.avgFactorTrend)
             , trend_ask = q_bricks.Trend.create(self.etc.avgFactorTrend)
-            , alpha_bid = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
-            , alpha_ask = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
             , alpha_aggr = q_bricks.AlphaAgg.create()
             }
             self.state.market.alpha_open = q_bricks.AlphaFilterOpen.create( self.etc.enterSpread
                                                                           , self.state.market.ma_bid_open
                                                                           , self.state.market.ma_ask_open
                                                                           )
-            self.state.market.alpha = self.state.market.alpha_open
+
+            self.state.market.alpha_fix = q_bricks.AlphaFilterFix.create(self.etc.fixSpread)
+
+            self.state.market.alpha_bid = q_bricks.AlphaByTrend.create( self.state.market.alpha_fix
+                                                                      , self.etc.sensitivity1
+                                                                      , self.etc.sensitivity2
+                                                                      )
+
+            self.state.market.alpha_ask = q_bricks.AlphaByTrend.create( self.state.market.alpha_fix
+                                                                      , self.etc.sensitivity1
+                                                                      , self.etc.sensitivity2
+                                                                      )
+            self.state.market.alpha = self.state.market.alpha_aggr
 
     self.state.targetPos = 0
     self.state.position = 0
@@ -272,7 +309,7 @@ function q_scalper:onQuote(class, asset)
         end
     end
 
-    if new_mid then
+    if new_mid and market.trend_bid.trend and market.trend_ask.trend then
         market.alpha_bid:onValue(market.trend_bid.trend)
         market.alpha_ask:onValue(market.trend_ask.trend)
         market.alpha_aggr:aggregate(market.alpha_bid.alpha, market.alpha_ask.alpha)

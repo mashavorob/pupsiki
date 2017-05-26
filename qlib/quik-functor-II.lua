@@ -21,7 +21,7 @@ local q_order = require("qlib/quik-order")
 --local ProFi = require("ProFi")
 local simTime = 0
 local simTransId = 1000000
-local lossPenaltyWeight = 0.5
+local lossPenaltyWeight = 0 --0.5
 
 
 local instance = nil
