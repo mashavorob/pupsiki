@@ -184,8 +184,9 @@ local AlphaByTrend = { epsilon = 1e-9
 function AlphaByTrend:onValue(trend)
     local alpha = self.alpha or 0
 
-    local signal = self.signal.alpha
-    local sensitivity = (signal > -self.epsilon and signal < self.epsilon) and self.sensitivity1 or -self.sensitivity2
+    local signal = self.signal and self.signal.alpha
+    signal = signal or 0
+    local sensitivity = (signal > -self.epsilon and signal < self.epsilon) and self.sensitivity1 or self.sensitivity2
 
     if trend < -sensitivity then
         alpha = -1
