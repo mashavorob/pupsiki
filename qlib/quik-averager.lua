@@ -28,28 +28,30 @@ local q_scalper =
         { avgFactorPrice    = 175       -- коэффициент осреднени€ цены
         , avgFactorOpen     = 26        -- коэффициент осреднени€ цены дл€ открыти€ позиции
         , historyLen        = 10        -- длина истории дл€ вычислени€ локальных экстремумов
-        , sensitivity       = 0.08      -- порог чувствительности
-        , enterSpread       = -3        -- отступ от кра€ стакана дл€ открыти€ позиции
+        , sensitivity1      = 0.033     -- порог чувствительности
+        , sensitivity2      = 0.081     -- порог чувствительности
+        , enterSpread       = 0         -- отступ от кра€ стакана дл€ открыти€ позиции
+        , fixSpread         = 99        -- фиксаци€ прибыли
 
         , params = 
             { { name="avgFactorPrice", min=1,    max=1e7, step=25,    precision=1   }
             , { name="avgFactorOpen",  min=1,    max=1e7, step=25,    precision=1   }
             , { name="historyLen",     min=2,    max=1e4, step=10,    precision=1   }
-            , { name="sensitivity",    min=0,    max=1e5, step=0.003, precision=0.001 }
-            , { name="enterSpread",    min=-100, max=100, step=5,     precision=1     }
-
-            --[[
-            
-            -- Parameter with function
-            
-            , { name="sensitivity"
-              , min=0
-              , max=1e5
-              , step=0.001
-              , precision=0.001
-              , get_max = function(self) return self.saturation end
-              }
-              ]]
+            , { name="sensitivity1"
+            ,   min=0
+            ,   max=1e5
+            ,   step=0.01
+            ,   precision=0.001 
+            ,   get_max = function(self) return self.sensitivity2 end
+            }
+            , { name="sensitivity2"
+            ,   min=0
+            ,   max=1e5
+            ,   step=0.01
+            ,   precision=0.001 
+            ,   get_min = function(self) return self.sensitivity1 end
+            }
+            , { name="fixSpread",      min=0,    max=1e5, step=10,    precision=1     }
             } 
         }
 
@@ -101,14 +103,24 @@ function q_scalper.create(etc)
             , ma_ask_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen)
             , trend_bid = q_bricks.Trend.create(self.etc.historyLen)
             , trend_ask = q_bricks.Trend.create(self.etc.historyLen)
-            , alpha_bid = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
-            , alpha_ask = q_bricks.AlphaByTrend.create(self.etc.sensitivity)
             , alpha_aggr = q_bricks.AlphaAgg.create()
             }
             self.state.market.alpha_open = q_bricks.AlphaFilterOpen.create( self.etc.enterSpread
                                                                           , self.state.market.ma_bid_open
                                                                           , self.state.market.ma_ask_open
                                                                           )
+
+            self.state.market.alpha_fix = q_bricks.AlphaFilterFix.create(self.etc.fixSpread)
+
+            self.state.market.alpha_bid = q_bricks.AlphaByTrend.create( self.state.market.alpha_fix
+                                                                      , self.etc.sensitivity1
+                                                                      , self.etc.sensitivity2
+                                                                      )
+
+            self.state.market.alpha_ask = q_bricks.AlphaByTrend.create( self.state.market.alpha_fix
+                                                                      , self.etc.sensitivity1
+                                                                      , self.etc.sensitivity2
+                                                                      )
             self.state.market.alpha = self.state.market.alpha_open
 
     self.state.targetPos = 0
@@ -259,7 +271,9 @@ function q_scalper:onQuote(class, asset)
         market.alpha_ask:onValue(market.trend_bid.trend)
     end
 
-    if new_mid then
+    if new_mid and market.trend_bid.trend and market.trend_ask.trend then
+        market.alpha_bid:onValue(market.trend_bid.trend)
+        market.alpha_ask:onValue(market.trend_ask.trend)
         market.alpha_aggr:aggregate(market.alpha_bid.alpha, market.alpha_ask.alpha)
         market.alpha:filter(market.alpha_aggr.alpha, market.pricer.bid, market.pricer.ask)
         market.trigger = market.trigger + market.ma_bid.k*(1 - market.trigger)

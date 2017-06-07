@@ -71,8 +71,8 @@ local q_base_strategy =
                          }
             -- ]]
             -- [[ PROD
-                         -- 11:30 - 14:00 
-            , schedule = { { period=q_time.interval("11:30", "13:55"), phase=CONTINUOUS_TRADING }
+                         -- 11:00 - 14:00 
+            , schedule = { { period=q_time.interval("11:00", "13:55"), phase=CONTINUOUS_TRADING }
                          , { period=q_time.interval("13:55", "14:00"), phase=CLOSING_POSITIONS }
                          -- 14:06 - 18:45
                         

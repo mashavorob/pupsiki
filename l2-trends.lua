@@ -38,9 +38,10 @@ local avg_trend = 15
 
 local avg_volume = 1000
 
-local sensitivity = 0.081
+local sensitivity1 = 0.06
+local sensitivity2 = 0.1
 local spread_open = 0
-local spread_fix = 87
+local spread_fix = 86
 
 local avg_price_open = 10
 
@@ -57,8 +58,10 @@ local ptrend_ask = q_bricks.Trend.create(avg_trend)
 
 local volume = q_bricks.VolumeCounter.create(avg_volume)
 
-local alpha_bid = q_bricks.AlphaByTrend.create(sensitivity)
-local alpha_ask = q_bricks.AlphaByTrend.create(sensitivity)
+local alpha_fix = q_bricks.AlphaFilterFix.create(spread_fix)
+
+local alpha_bid = q_bricks.AlphaByTrend.create(alpha_fix, sensitivity1, sensitivity2)
+local alpha_ask = q_bricks.AlphaByTrend.create(alpha_fix, sensitivity1, sensitivity2)
 local alpha_aggr = q_bricks.AlphaAgg.create()
 local alpha_open = q_bricks.AlphaFilterOpen.create(spread_open, ma_bid_open, ma_ask_open)
 local alpha_fix = q_bricks.AlphaFilterFix.create(spread_fix)

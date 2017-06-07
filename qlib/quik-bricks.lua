@@ -163,18 +163,26 @@ local AlphaByTrend = { epsilon = 1e-9
 function AlphaByTrend:onValue(trend)
     local alpha = self.alpha or 0
 
-    if trend < -self.sensitivity then
+    local signal = self.signal and self.signal.alpha
+    signal = signal or 0
+    local sensitivity = (signal > -self.epsilon and signal < self.epsilon) and self.sensitivity1 or self.sensitivity2
+
+    if trend < -sensitivity then
         alpha = -1
-    elseif trend > self.sensitivity then
+    elseif trend > sensitivity then
         alpha = 1
     end
 
     self.alpha = alpha
 end
 
-function AlphaByTrend.create(sensitivity)
-    local self = { sensitivity = sensitivity or AlphaByTrend.epsilon
+function AlphaByTrend.create(signal, sensitivity1, sensitivity2)
+    sensitivity1 = sensitivity1 or AlphaByTrend.epsilon
+    sensitivity2 = sensitivity2 or sensitivity1
+    local self = { sensitivity1 = sensitivity1
+                 , sensitivity2 = sensitivity2
                  , alpha = 0
+                 , signal = signal
                  }
     setmetatable(self, {__index = AlphaByTrend})
     return self
