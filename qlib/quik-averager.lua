@@ -25,13 +25,25 @@ local q_scalper =
      -- master configuration
     { etc =
         -- Параметры стратегии
-        { avgFactorTrend    = 37        -- коэффициент осреднения тренда
-        , avgFactorPrice    = 880       -- коэффициент осреднения цены
-        , avgFactorOpen     = 86        -- коэффициент осреднения цены для открытия позиции
-        , sensitivity1      = 0.06      -- порог чувствительности
+        -- optimized by 04/067, margin on 04/1* -2106.710000, margin on 04/0[4-7] -619.360000
+        --
+        { avgFactorTrend    = 85        -- коэффициент осреднения тренда
+        , avgFactorPrice    = 1052       -- коэффициент осреднения цены
+        , avgFactorOpen     = 144        -- коэффициент осреднения цены для открытия позиции
+        , sensitivity1      = 0.033      -- порог чувствительности
         , sensitivity2      = 0.081     -- порог чувствительности
         , fixSpread         = 99        -- фиксация прибыли
 
+        --[[
+        -- optimized by 04/06, margin on 04/1* -1025, margin on 04/0[4-7] - 148
+        --
+        { avgFactorTrend    = 64        -- коэффициент осреднения тренда
+        , avgFactorPrice    = 1052       -- коэффициент осреднения цены
+        , avgFactorOpen     = 118        -- коэффициент осреднения цены для открытия позиции
+        , sensitivity1      = 0.07      -- порог чувствительности
+        , sensitivity2      = 0.081     -- порог чувствительности
+        , fixSpread         = 99        -- фиксация прибыли
+        ]]
         , priceCandle       = 0.25      -- ширина свечи цены, сек
         , enterSpread       = 0         -- отступ от края стакана для открытия позиции
 
@@ -148,7 +160,7 @@ function q_scalper.create(etc)
                                                                       , self.etc.sensitivity1
                                                                       , self.etc.sensitivity2
                                                                       )
-            self.state.market.alpha = self.state.market.alpha_aggr
+            self.state.market.alpha = self.state.market.alpha_open
 
     self.state.targetPos = 0
     self.state.position = 0
