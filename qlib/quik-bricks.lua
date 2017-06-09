@@ -240,12 +240,11 @@ function AlphaFilterOpen:filter(alpha, bid, ask)
 
     local fair_bid, fair_ask = bid, ask
     if self.spread == 0 then
-        local fair_price = (self.ma_bid.ma_val + self.ma_ask.ma_val)/2
-        fair_bid = fair_price
-        fair_ask = fair_ask
+        fair_bid = self.ma.ma_val
+        fair_ask = self.ma.ma_val
     else
-        fair_bid = self.ma_bid.ma_val + self.spread
-        fair_ask = self.ma_ask.ma_val - self.spread
+        fair_bid = self.ma.ma_val + self.spread
+        fair_ask = self.ma.ma_val - self.spread
     end
 
     if alpha > self.alpha and ask > fair_ask then
@@ -257,11 +256,10 @@ function AlphaFilterOpen:filter(alpha, bid, ask)
     return alpha
 end
 
-function AlphaFilterOpen.create(spread, ma_bid, ma_ask)
+function AlphaFilterOpen.create(spread, ma)
     self = { alpha = 0
            , spread = spread
-           , ma_bid = ma_bid
-           , ma_ask = ma_ask
+           , ma = ma
            }
     setmetatable(self, {__index = AlphaFilterOpen})
     return self
