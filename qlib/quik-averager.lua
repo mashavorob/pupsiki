@@ -97,30 +97,21 @@ function q_scalper.create(etc)
             , mid = 0
             , trigger = 0
             , pricer = q_bricks.PriceTracker.create()
-            , ma_bid = q_bricks.MovingAverage.create(self.etc.avgFactorPrice)
-            , ma_ask = q_bricks.MovingAverage.create(self.etc.avgFactorPrice)
-            , ma_bid_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen)
-            , ma_ask_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen)
-            , trend_bid = q_bricks.Trend.create(self.etc.historyLen)
-            , trend_ask = q_bricks.Trend.create(self.etc.historyLen)
-            , alpha_aggr = q_bricks.AlphaAgg.create()
+            , ma_price = q_bricks.MovingAverage.create(self.etc.avgFactorPrice)
+            , ma_open = q_bricks.MovingAverage.create(self.etc.avgFactorOpen)
+            , trend = q_bricks.Trend.create(self.etc.historyLen)
             }
             self.state.market.alpha_open = q_bricks.AlphaFilterOpen.create( self.etc.enterSpread
-                                                                          , self.state.market.ma_bid_open
-                                                                          , self.state.market.ma_ask_open
+                                                                          , self.state.market.ma_open
                                                                           )
 
             self.state.market.alpha_fix = q_bricks.AlphaFilterFix.create(self.etc.fixSpread)
 
-            self.state.market.alpha_bid = q_bricks.AlphaByTrend.create( self.state.market.alpha_fix
-                                                                      , self.etc.sensitivity1
-                                                                      , self.etc.sensitivity2
-                                                                      )
+            self.state.market.alpha_trend = q_bricks.AlphaByTrend.create( self.state.market.alpha_fix
+                                                                        , self.etc.sensitivity1
+                                                                        , self.etc.sensitivity2
+                                                                        )
 
-            self.state.market.alpha_ask = q_bricks.AlphaByTrend.create( self.state.market.alpha_fix
-                                                                      , self.etc.sensitivity1
-                                                                      , self.etc.sensitivity2
-                                                                      )
             self.state.market.alpha = self.state.market.alpha_open
 
     self.state.targetPos = 0
@@ -141,7 +132,7 @@ function q_scalper:updatePosition()
     local state = self.state
     local etc = self.etc
     local market = state.market
-    if not market.ma_bid.val or not market.ma_ask.val then
+    if not market.ma_price.val then
         return
     end
 
@@ -187,12 +178,12 @@ function q_scalper:updatePosition()
         if diff > 0 then
             state.state = (state.targetPos == 0) and "Ликивидация позиции" or "Открытие длинной позиции"
             local price = market.offer + etc.priceStepSize
-            self:Print("Enter long at: %d@%f bid=%.0f offer=%.0f market.mid=%.0f ma_ask.val=%.2f"
+            self:Print("Enter long at: %d@%f bid=%.0f offer=%.0f market.mid=%.0f ma_price.val=%.2f"
                 , lotSize, price
                 , market.bid
                 , market.offer
                 , market.mid
-                , market.ma_ask.val
+                , market.ma_price.val
                 )
             local res, err = state.order:send('B', price, lotSize, "KILL_BALANCE")
             self:checkStatus(res, err)
@@ -201,12 +192,12 @@ function q_scalper:updatePosition()
         elseif diff < 0 then
             state.state = (state.targetPos == 0) and "Ликивидация позиции" or "Открытие короткой позиции"
             local price = market.bid - etc.priceStepSize
-            self:Print("Enter short at: %d@%f bid=%.0f offer=%.0f mid=%.0f ma_bid.val=%.2f"
+            self:Print("Enter short at: %d@%f bid=%.0f offer=%.0f mid=%.0f ma_price.val=%.2f"
                 , lotSize, price
                 , market.bid
                 , market.offer
                 , market.mid
-                , market.ma_bid.val
+                , market.ma_price.val
                 )
             local res, err = state.order:send('S', price, lotSize, "KILL_BALANCE")
             self:checkStatus(res, err)
@@ -258,25 +249,17 @@ function q_scalper:onQuote(class, asset)
     end
     local now = quik_ext.gettime()
 
-    if new_bid then
-        market.ma_bid:onValue(market.pricer.bid, now)
-        market.ma_bid_open:onValue(market.pricer.bid, now)
-        market.trend_bid:onValue(market.ma_bid.ma_val, market.ma_bid.time, true)
-        market.alpha_bid:onValue(market.trend_bid.trend)
-    end
-    if new_ask then
-        market.ma_ask:onValue(market.pricer.bid, now)
-        market.ma_ask_open:onValue(market.pricer.bid, now)
-        market.trend_ask:onValue(market.ma_bid.ma_val, market.ma_bid.time, true)
-        market.alpha_ask:onValue(market.trend_bid.trend)
+    if new_mid then
+        market.ma_price:onValue(market.pricer.mid, now)
+        market.ma_open:onValue(market.pricer.mid, now)
+        market.trend:onValue(market.ma_price.ma_val, market.ma_price.time, true)
+        market.alpha_trend:onValue(market.trend.trend)
     end
 
-    if new_mid and market.trend_bid.trend and market.trend_ask.trend then
-        market.alpha_bid:onValue(market.trend_bid.trend)
-        market.alpha_ask:onValue(market.trend_ask.trend)
-        market.alpha_aggr:aggregate(market.alpha_bid.alpha, market.alpha_ask.alpha)
-        market.alpha:filter(market.alpha_aggr.alpha, market.pricer.bid, market.pricer.ask)
-        market.trigger = market.trigger + market.ma_bid.k*(1 - market.trigger)
+    if new_mid and market.trend.trend then
+        market.alpha_trend:onValue(market.trend.trend)
+        market.alpha:filter(market.alpha_trend.alpha, market.pricer.bid, market.pricer.ask)
+        market.trigger = market.trigger + market.ma_price.k*(1 - market.trigger)
         self:calcPlannedPos()
     end
     self:updatePosition()
