@@ -267,6 +267,30 @@ function AlphaFilterOpen.create(spread, ma_bid, ma_ask)
     return self
 end
 
+local AlphaStochOpen = { epsilon = 0.1 }
+
+function AlphaStochOpen:filter(alphaTrend, alpha, bid, ask)
+    alpha = alpha or 0
+    if alphaTrend*alpha < -self.epsilon then
+        alpha = 0
+    elseif alphaTrend > self.epsilon and bid < self.ma_bid.ma_val - self.spread then
+        alpha = 1
+    elseif alphaTrend < -self.epsilon and ask > self.ma_ask.ma_val + self.spread then
+        alpha = -1
+    end
+    self.alpha = alpha
+end
+
+function AlphaStochOpen.create(spread, ma_bid, ma_ask)
+    self = { alpha = 0
+           , spread = spread
+           , ma_bid = ma_bid
+           , ma_ask = ma_ask
+           }
+    setmetatable(self, {__index = AlphaStochOpen})
+    return self
+end
+
 local AlphaFilterFix = {}
 
 function AlphaFilterFix:filter(alpha, bid, ask)
@@ -319,6 +343,7 @@ local q_bricks = { PriceTracker = PriceTracker
                  , AlphaFilterOpen = AlphaFilterOpen
                  , AlphaFilterFix = AlphaFilterFix
                  , VolumeCounter = VolumeCounter
+                 , AlphaStochOpen = AlphaStochOpen
                  }
 
 return q_bricks

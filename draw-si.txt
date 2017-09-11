@@ -1,8 +1,8 @@
 unset multiplot
 
 fname = "si-10.txt"
-from = "11:00:00"
-to   = "18:00:00"
+from = "12:00:00"
+to   = "12:30:00"
 
 set term wxt 0
 
@@ -26,7 +26,7 @@ plot \
     fname using 1:2 title 'Spot' with lines axes x1y1, \
     fname using 1:3 title 'Price' with lines axes x1y1, \
     fname using 1:4 title 'Price-Open' with lines axes x1y1, \
-    fname using 1:10 title 'Alpha-Fix' with lines axes x1y2
+    fname using 1:12 title 'Alpha-Fix' with lines axes x1y2
 
 set title "Traded volume"
 set xdata time

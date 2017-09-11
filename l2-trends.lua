@@ -37,6 +37,7 @@ local period_price = 0.25
 
 local avg_price = 880
 local avg_trend = 37
+local avg_stoch = 37
 
 local avg_volume = 1000
 
@@ -44,6 +45,8 @@ local sensitivity1 = 0.06
 local sensitivity2 = 0.1
 local spread_open = 0
 local spread_fix = 86
+local spread_open_stoch = 3
+local spread_fix_stoch = 6
 
 local avg_price_open = 99
 
@@ -54,6 +57,9 @@ local ma_ask = q_bricks.MovingAverage.create(avg_price, period_price)
 
 local ma_bid_open = q_bricks.MovingAverage.create(avg_price_open, period_price)
 local ma_ask_open = q_bricks.MovingAverage.create(avg_price_open, period_price)
+
+local ma_bid_stoch = q_bricks.MovingAverage.create(avg_stoch, period_price)
+local ma_ask_stoch = q_bricks.MovingAverage.create(avg_stoch, period_price)
 
 local ptrend_bid = q_bricks.Trend.create(avg_trend)
 local ptrend_ask = q_bricks.Trend.create(avg_trend)
@@ -66,6 +72,9 @@ local alpha_bid = q_bricks.AlphaByTrend.create(alpha_fix, sensitivity1, sensitiv
 local alpha_ask = q_bricks.AlphaByTrend.create(alpha_fix, sensitivity1, sensitivity2)
 local alpha_aggr = q_bricks.AlphaAgg.create()
 local alpha_open = q_bricks.AlphaFilterOpen.create(spread_open, ma_bid_open, ma_ask_open)
+
+local alpha_stoch = q_bricks.AlphaStochOpen.create(spread_open_stoch, ma_bid_stoch, ma_ask_stoch)
+local alpha_fix_stoch = q_bricks.AlphaFilterFix.create(spread_fix_stoch)
 
 local now = nil
 local prevLn = nil
@@ -93,6 +102,10 @@ function processEvent(ev)
             while quantum do
                 quantum = ma_bid_open:onValue(pricer.bid, now)
             end
+            quantum = ma_bid_stoch:onValue(pricer.bid, now)
+            while quantum do
+                quantum = ma_bid_stoch:onValue(pricer.bid, now)
+            end
         end
         if new_ask then
             local quantum = ma_ask:onValue(pricer.ask, now)
@@ -104,6 +117,10 @@ function processEvent(ev)
             while quantum do
                 quantum = ma_ask_open:onValue(pricer.ask, now)
             end
+            quantum = ma_ask_stoch:onValue(pricer.ask, now)
+            while quantum do
+                quantum = ma_ask_stoch:onValue(pricer.ask, now)
+            end
         end
 
         if new_mid and ptrend_bid.trend and ptrend_ask.trend then
@@ -112,6 +129,9 @@ function processEvent(ev)
             alpha_aggr:aggregate(alpha_bid.alpha, alpha_ask.alpha)
             alpha_open:filter(alpha_aggr.alpha, pricer.bid, pricer.ask)
             alpha_fix:filter(alpha_open.alpha, pricer.bid, pricer.bid)
+
+            alpha_stoch:filter(alpha_fix.alpha, alpha_fix_stoch.alpha, pricer.bid, pricer.ask)
+            alpha_fix_stoch:filter(alpha_stoch.alpha, pricer.bid, pricer.bid)
             changed = true
         end
     elseif ev.event == "onAllTrade" then
@@ -132,18 +152,26 @@ function processEvent(ev)
             , alpha_aggr = alpha_aggr.alpha
             , alpha_open = alpha_open.alpha
             , alpha_fix  = alpha_fix.alpha
+            , alpha_stoch = alpha_stoch.alpha
+            , alpha_fix_stoch = alpha_fix_stoch.alpha
             , sell_volume = volume.ma_sell
             , buy_volume = volume.ma_buy
             , volume = volume.ma_volume
             }
         local ln = string.format(
-            -- mid   price   price-open  trend   alpha-bid alpha-ask  alpha alpha-open alpha-fix   sell-volume buy-volume  volume
-            "%15.03f %15.03f %15.03f ".."%15.04f %15d " .. "%15d " .. "%15d %15d " ..  "%15d " .. "%15.04f ".."%15.04f ".."%15.04f"
+          -- mid   price   price-open  trend       
+            "%15.03f %15.03f %15.03f ".."%15.04f ".. 
+          -- alpha-bid alpha-ask  alpha alpha-open alpha-fix alpha-stoch alpha-stoch-fix
+            "%15d " .. "%15d " .. "%15d %15d " ..  "%15d ".. "%15d "..   "%15d " .. 
+          -- sell-volume buy-volume  volume
+            "%15.04f ".."%15.04f ".."%15.04f" 
             , data.mid, data.price, data.price_open, data.trend
             , data.alpha_bid, data.alpha_ask
             , data.alpha_aggr
             , data.alpha_open
             , data.alpha_fix
+            , data.alpha_stoch
+            , data.alpha_fix_stoch
             , data.sell_volume
             , data.buy_volume
             , data.volume
@@ -169,11 +197,15 @@ end
 
 FPrint(
     "%12s " ..
-    -- 2   3    4    5    6    7    8    9    10   11   12   13
-    "%15s %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s"
+    -- 2   3    4    5    6    7    8    9    10   11   12   13   14   15
+    "%15s %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s %15s"
     , "time"
-    -- 2      3         4            5        6            7            8        9             10           11          12         13
-    , "mid", "price", "price-open", "trend", "alpha-bid", "alpha-ask", "alpha", "alpha-open", "alpha-fix", "sell-vol", "buy-vol", "vol"
+    -- 2      3         4            5
+    , "mid", "price", "price-open", "trend"
+    -- 6            7            8        9             10           11             12
+    , "alpha-bid", "alpha-ask", "alpha", "alpha-open", "alpha-fix", "alpha-stoch", "alpha-stoch-fix"
+    -- 13          14         15
+    , "sell-vol", "buy-vol", "vol"
     )
 
 local ln = 0
