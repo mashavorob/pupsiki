@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project( quik_ext C )
+project( quik_ext )
 
 include_directories (
     ${CMAKE_CURRENT_BINARY_DIR} 
@@ -22,7 +22,7 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/c_ext.h.in" "${CMAKE_CURRENT_BINARY_
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 
     add_library( quik_ext SHARED 
-        c_ext.c
+        c_ext.cpp
         )
 
     target_link_libraries(
@@ -34,7 +34,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 else()
 
     add_library( quik_ext SHARED 
-        c_ext.c
+        c_ext.cpp
         )
 
 endif()
