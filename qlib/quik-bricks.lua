@@ -335,6 +335,41 @@ function AlphaFilterFix.create(spread)
     return self
 end
 
+local MaxTracker = {}
+
+function MaxTracker:onValue(val, t)
+    if not self.maxval then
+        self.maxval = {val=val, t=t}
+        self.up = true
+    elseif val >= self.maxval.val then
+        self.up = true
+        self.maxval = {val=val, t=t}
+    elseif t - self.maxval.t > self.resolution then
+        if self.up then
+            table.insert(self.maxvals, 1, self.maxval)
+            self.up = false
+        end
+        self.maxval = {val=val, t=t}
+    end
+end
+
+function MaxTracker:conflate_max()
+    while #self.values > 1 and 
+        self.values[1].val >= self.values[2].val and 
+        self.values[1].t - self.values[2].t < self.resolution
+    do
+        table.remove(self.values, 2)
+    end
+end
+
+function MaxTracker.create(resolution)
+    local self = { resolution = resolution
+                 , values = {}
+                 }
+    setmetatable(self, {__index = MaxTracker})
+    return self
+end
+
 local q_bricks = { PriceTracker = PriceTracker
                  , MovingAverage = MovingAverage
                  , Trend = Trend

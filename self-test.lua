@@ -1,4 +1,4 @@
-#!/usr/bin/env luajit
+#!/usr/bin/env lua
 --[[
 # vi: ft=lua:fenc=cp1251 
 #
@@ -12,11 +12,14 @@
 # or enable modeline in your .vimrc
 ]]
 
+LUA_CDIR=".//lib?.so"
+
 local q_jit = require("qlib/quik-jit")
 local q_config = require("qlib/quik-etc")
 local q_log = require("qlib/quik-logger")
 local avd = require("qlib/quik-avd")
 local q_container = require("qlib/quik-jit-l2-data")
+local quik_ext = require("quik_ext")
 
 print("")
 print("Quik library unit tests (c) 2016")
@@ -27,6 +30,18 @@ else
     print("Lua interpreter detected")
 end
 print("")
+
+local mm = quik_ext.newminmax(10)
+
+for i=1,5 do
+    mm:add(i, i)
+    mm:add(i, -i)
+end
+print("mm.getmin() = ", mm:getmin())
+print("mm.getmax() = ", mm:getmax())
+print("mm = ", mm)
+print("a table = ", { abc=5 })
+mm = nil
 
 
 local unitTests = {

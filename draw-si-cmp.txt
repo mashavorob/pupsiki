@@ -1,0 +1,49 @@
+unset multiplot
+
+f1 = "si-07.txt"
+f2 = "si-14.txt"
+
+set term wxt 0
+
+set multiplot layout 2,1 
+
+set title f1
+set xdata time
+set timefmt "%H:%M:%S"
+set format x "%H:%M:%.3S"
+set xtics out rotate by 0
+set xlabel "Time"
+set ylabel "Price"
+set y2label "Alpha"
+set autoscale y
+set autoscale y2
+set x2zeroaxis
+set grid
+set xrange ["11:30:00" : "18:00:00"]
+set y2range [-2 : 2]
+plot \
+    f1 using 1:2 title 'Spot' with lines axes x1y1, \
+    f1 using 1:3 title 'Price' with lines axes x1y1, \
+    f1 using 1:4 title 'Price-Open' with lines axes x1y1, \
+    f1 using 1:9 title 'Alpha-Open' with lines axes x1y2
+
+set title f2
+set xdata time
+set timefmt "%H:%M:%S"
+set format x "%H:%M:%.3S"
+set xtics out rotate by 0
+set xlabel "Time"
+set ylabel "Price"
+set y2label "Alpha"
+set autoscale y
+set autoscale y2
+set x2zeroaxis
+set grid
+set xrange ["11:30:00" : "18:00:00"]
+set y2range [-2 : 2]
+plot \
+    f2 using 1:2 title 'Spot' with lines axes x1y1, \
+    f2 using 1:3 title 'Price' with lines axes x1y1, \
+    f2 using 1:4 title 'Price-Open' with lines axes x1y1, \
+    f2 using 1:9 title 'Alpha-Open' with lines axes x1y2
+
